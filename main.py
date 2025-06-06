@@ -1,4 +1,5 @@
 # CFDI Invoice Processing.
+import platform
 import os
 # from xml_parser import parse_xml_invoice
 # from excel_exporter import export_to_excel
@@ -9,6 +10,14 @@ from datetime import datetime
 BASE_APP_DIR = "CFDI_Processor_App"
 BOVEDA_XML_DIR = os.path.join(BASE_APP_DIR, "Boveda_XMLs")
 REPORTS_DIR = os.path.join(BASE_APP_DIR, "Reports")
+
+
+def clear_terminal():
+    """Clear the terminal screen based on the operating system."""
+    if platform.system() == "Windows":
+        os.system("cls")
+    else:
+        os.system("clear")
 
 
 def create_initial_directories():
@@ -23,6 +32,10 @@ def main():
     """
     Main function to process the CFDI XML processing application.
     """
+
+    # Clear the terminal for a fresh start.
+    clear_terminal()
+
     print("------ CFDI Invoice Processing Application ------")
     print("This tool will parse XML electronic invoices from a speffied directory and export the data to an Excel file.")
     print("It automatically detects if an XML is a regular CFDI or a Nomina Complement")
