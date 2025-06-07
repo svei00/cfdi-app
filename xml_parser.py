@@ -132,17 +132,107 @@ def parse_xml_invoice(xml_file_path):
                                _, col_name in CFDI_FIELDS_TO_EXTRACT]
         all_possible_fields.extend(
             [col_name for _, _, _, col_name in NOMINA_FIELDS_TO_EXTRACT])
-        all_possible_fields.extend(['Descripcion, 'TotalGravado', 'TotalExento', 'Source.Name', 'CDFI_Type','Factura',  # For the merged Serie+Folio field
-                                    'ImpLocal_TrasladadosLocales_Details  # For the concatenated implocal details
+        all_possible_fields.extend(['Descripcion', 'TotalGravado', 'TotalExento', 'Source.Name', 'CDFI_Type', 'Factura',  # For the merged Serie+Folio field
+                                    'ImpLocal_TrasladadosLocales_Details'  # For the concatenated implocal details
                                     ])
         # Using set to avoud duplicates
         for field in set(all_possible_fields):
             data[field] = None
 
-    except "" as e:
-        print()
+        # Extract Serie and Folio to create the merged "Factura" field
+        serie = root.get('Serie', '')
+        folio = root.get('Folio', '')
+        # Maybe cobe back to chang back None to ""
+        data['Factura'] = f"{serie}-{folio}".strip() if serie or folio else None
+
+        # Exrfact CFDI 4.0 fields
+        for xpath, attr_name, default_val, col_name in CFDI_FIELDS_TO_EXTRACT:
+            element = root.find(xpath, NAMESPACES)
+            if element is not None:
+                if attr_name:  # If an attribute is specified, get its value
+                    value = element.get(attr_name, default_val)
+                else:  # It's element text (thought most CFDI data is attributes)
+                    value = element.text.strip() if element.text is not None else default_val
+            else:
+                value = default_val
+            data[col_name] = value
+
+        # Handle merged "Descripcion" from multiple Concepto nodes
+        descripcions = []  # Create a list
+        for concepto in root.finall("..//cfdi:Concepto", NAMESPACES):
+            description = concepto.get('Descripcion', '').strip()
+            if description:
+                descripcions.append(description)
+            data['Descripcion'] = ' | '.join(
+                descripcions) if descripcions else None
+
+        # Handle impLocal:TransladosLocales (multiple nodes)
+        # This will concatenate details of all local translado impuesto into a single string
+        traslados_locales_details = []  # create a list
+        for traslado_local in root.findall(".//implocal:TrasladoLocales", NAMESPACES):
+            imp_loc_trasladado = traslado_local.get("ImpuLocTrasladado", "")
+            tasa_de_traslado = traslado_local.get("TasaDeTraslado", "")
+            # Si vuelve a fallar cambiar "0.00" a ""
+            importe = traslado_local.get("Importe", "0.00")
+            # Format: "Impuesto|Tasa|Importe"
+            traslados_locales_details.append(
+                f"{imp_loc_trasladado}|{tasa_de_traslado}|{importe}")
+        data["ImpLocal_TrasladadosLocales_Details"] = ' | '.join(
+            traslados_locales_details) if traslados_locales_details else None
+
+        # Nomina 1.2 fields
+        # Detect and Extract Nomina 1.2 complement data.
+        nomina_complement = root.find(".//nomina12:Nomina", NAMESPACES)
+        if nomina_complement is not None:
+            data['CFDI_Type'] = 'Nomina'
+            for xpath, attr_name, default_val, col_name in NOMINA_FIELDS_TO_EXTRACT:
+                # Need to find elements relative to the root again, or adjust the XPath for 'nomina_complement'
+                # The easy way and conssistent with current XPaths, re-find from root
+                element = root.find(xpath, NAMESPACES)
+                if element is not None:
+                    if attr_name:
+                        value = element.get(attr_name, default_val)
+                    else:
+                        value = element.text.strip() if element.text is not None else default_val
+                else:
+                    value = default_val
+                data[col_name] = value
+
+            # Calculate TotalGravado and TotalExcento from Percepciones
+            total_gravado_percepciones = 0.0
+            total_exento_percepciones = 0.0
+            for percepcion in root.findall(".//nomina12:Percepcion", NAMESPACES):
+                try:
+                    total_gravado_percepciones += float(
+                        percepcion.get("ImporteGravado", "0.00"))
+                except ValueError:
+                    pass
+                try:
+                    total_exento_percepciones += float(
+                        percepcion.get("ImporteExento", "0.00"))
+                except ValueError:
+                    pass
+            data['TotalGravado'] = f"{total_gravado_percepciones:.2f}"
+            data['TotalExento'] = f"{total_exento_percepciones:.2f}"
+
+        else:
+            data['CFDI_Type'] = 'Invoice'
+            # For non-nomina 1.2 CFDI, ensure Nomina specific fields are explicity None
+            for _, _, _, col_name in NOMINA_FIELDS_TO_EXTRACT:
+                data[col_name] = None
+            data['TotalGravado'] = None
+            data['TotalExento'] = None
+            data['TotalDeducciones'] = None
+            data['TotalOtrosPagos'] = None
+
+        # Get Source.Name (filename)
+        data['Source.Name'] = os.path.basename(xml_file_path)
+
+    except ET.ParseError as e:
+        print(f"Error parsing XML file {xml_file_path}: {e}")
         return None
     except Exception as e:
-        print("")
+        print(
+            f"An unexpected error occurred while processing {xml_file_path}: {e}")
         return None
-    return
+    return data
