@@ -72,14 +72,14 @@ def main():
                     error_count += 1
 
     if not all_passed_data:
-        print("No valid CDFI XML files were processed. Please check the directory and file formats.")
+        print("No valid CFDI XML files were processed. Please check the directory and file formats.")
         return
 
     # Separate data for different sheets.
     invoice_data = [d for d in all_passed_data if d.get(
-        "CDFI_Type") == "Invoice"]
+        "CFDI_Type") == "Invoice"]
     nomina_data = [d for d in all_passed_data if d.get(
-        "CDFI_Type") == "Nomina"]
+        "CFDI_Type") == "Nomina"]
 
     print(
         f"\nProcessed {processed_count} XML files. ({error_count} errors encountered.)")

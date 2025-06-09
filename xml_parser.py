@@ -159,7 +159,7 @@ def parse_xml_invoice(xml_file_path):
 
         # Handle merged "Descripcion" from multiple Concepto nodes
         descripcions = []  # Create a list
-        for concepto in root.findall("..//cfdi:Concepto", NAMESPACES):
+        for concepto in root.findall(".//cfdi:Concepto", NAMESPACES):
             description = concepto.get('Descripcion', '').strip()
             if description:
                 descripcions.append(description)
@@ -169,8 +169,8 @@ def parse_xml_invoice(xml_file_path):
         # Handle impLocal:TransladosLocales (multiple nodes)
         # This will concatenate details of all local translado impuesto into a single string
         traslados_locales_details = []  # create a list
-        for traslado_local in root.findall(".//implocal:TrasladoLocales", NAMESPACES):
-            imp_loc_trasladado = traslado_local.get("ImpuLocTrasladado", "")
+        for traslado_local in root.findall(".//implocal:TrasladosLocales", NAMESPACES):
+            imp_loc_trasladado = traslado_local.get("ImpLocTrasladado", "")
             tasa_de_traslado = traslado_local.get("TasaDeTraslado", "")
             # Si vuelve a fallar cambiar "0.00" a ""
             importe = traslado_local.get("Importe", "0.00")
