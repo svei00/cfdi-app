@@ -159,7 +159,7 @@ def parse_xml_invoice(xml_file_path):
 
         # Handle merged "Descripcion" from multiple Concepto nodes
         descripcions = []  # Create a list
-        for concepto in root.finall("..//cfdi:Concepto", NAMESPACES):
+        for concepto in root.findall("..//cfdi:Concepto", NAMESPACES):
             description = concepto.get('Descripcion', '').strip()
             if description:
                 descripcions.append(description)

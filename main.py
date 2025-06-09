@@ -1,8 +1,8 @@
 # CFDI Invoice Processing.
 import platform
 import os
-# from xml_parser import parse_xml_invoice
-# from excel_exporter import export_to_excel
+from xml_parser import parse_xml_invoice
+from excel_exporter import export_to_excel
 from datetime import datetime
 
 # Define the base directory where the XMLs will be stored and processed
@@ -61,12 +61,12 @@ def main():
     print(f"Scanning directory: {input_folder}")
     for root_dir, _, files in os.walk(input_folder):
         for file in files:
-            if file.lower().endswith(".xlm"):
+            if file.lower().endswith(".xml"):
                 xml_file_path = os.path.join(root_dir, file)
                 print(f" - Processing {file}...")
-                parsed_data = parsed_xml_invoice(xml_file_path)
+                parsed_data = parse_xml_invoice(xml_file_path)
                 if parsed_data:
-                    all_parsed_data.append(parsed_data)
+                    all_passed_data.append(parsed_data)
                     processed_count += 1
                 else:
                     error_count += 1
