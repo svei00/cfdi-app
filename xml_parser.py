@@ -17,6 +17,81 @@ NAMESPACES = {
     'xsi': 'http://www.w3.org/2001/XMLSchema-instance'
 }
 
+# Define the precise order of columns for the Invoice sheet.
+# This lis will be used to ensure the DataFrame match this order when exporting to Excel.
+INVOICE_COLUMNS_ORDER = [
+    # Placeholder: Requires external logic/data (e.g., SAT validation, internal database)
+    "Verificado o Asociado",
+    "Estado SAT",  # Placeholder: Requires external logic/data for cancelation status)
+    "Version",
+    "Tipo",
+    "Fecha Emisión",
+    "Fecha Timbrado",
+    # "EstadoPago", # Placeholder: Not directly in XML, tipocally derived from payment status.
+    # "FechaPago", # Placeholder: Not directly in XML for general invoices, but present in Nomina.
+    "Factura",  # Merged field: Serie + Folio
+    "UUID",
+    "UUID Relacionados",
+    "RFC Emisor",
+    "Nombre Emisor",
+    "lugarExpedicion",
+    "RFC Receptor",
+    "Nombre Receptor",
+    "Residencia Fiscal",
+    "NumRegIdTrib",
+    "USO CFDI",
+    "SubTotal",
+    "Descuento",
+    "Total IEPS",
+    "IVA 16%",
+    "Retenido IVA",
+    "Retenido ISR",
+    "ISH",
+    "Total",
+    # "TotalOriginal", # Removed: Redundant as SubTotal and Total cover these aspects.
+    "Total Trasladados",
+    "Total Retenidos",
+    "Total LocalTranslado",
+    "Total LocalRetenido",
+    # Probably not needed, but can be used to indicate if there is a Nomina complement.
+    "Complemento",
+    "Moneda",
+    "Tipo de Cambio",
+    "FormaDePago",
+    "Metodo de Pago",
+    "NumCtaPago",
+    "Condiciones de Pago",
+    "Descripcion",  # Merged from multiple Concepto nodes
+    # Placeholder: Not tipically in CFDI 4.0, but can be added if needed. Is like a helper column for fuel CFDI.
+    "Combustible",
+    "IEPS 3%",
+    "IEPS 6%",
+    "IEPS 7%",
+    "IEPS 8%",
+    "IEPS 9%",
+    "IEPS 26.5%",
+    "IEPS 30%",
+    "IEPS 53%",
+    "IEPS 160%",
+    "Archivo XML",
+    # Placeholder: Need to double check CFDI 4.0 Documentation for address fields.
+    "Direccion Emisor",
+    # Placeholder: Need to double check CFDI 4.0 Documentation for address fields.
+    "Localidad Emisor",
+    # Placeholder: Need to double check CFDI 4.0 Documentation for address fields.
+    "Direccion Receptor",
+    # Placeholder: Need to double check CFDI 4.0 Documentation for address fields.
+    "Localidad Receptor",
+    "IVA 8%",
+    "IEPS 30.4%",
+    "IVA Ret 6%",
+    "RegimenFiscalReceptor",
+    "Domicilio Fiscal Receptor",  # Postal Code.
+    "CURP Alumno",  # For IEDU Complement.
+    "Nivel Educativo",  # For IEDU Complement.
+    "Nombre Alumno",  # For IEDU Complement.
+]
+
 # List of XML tags/attributes to extract for regula CFDI XML.
 # Eaach item is a tuple: (XPath, atribute_name_if_any, default_value_if_not_found, output_column_name)
 # For atributes, the XPath should point to the element containing the attribute and atribute_name_if_any should be the atribute name.
