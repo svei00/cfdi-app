@@ -128,6 +128,9 @@ CFDI_FIELDS_TO_EXTRACT = [
     # (".//cfdi:Receptor", "ResidenciaFiscal", "", "Residencia Fiscal Receptor"),
     # (".//cfdi:Receptor", "NumRegIdTrib", "", "NumRegIdTrib Receptor"),
     (".//cfdi:Receptor", "UsoCFDI", "", "Uso CFDI Receptor"),
+    (".//cfdi:Receptor", "RegimenFiscalReceptor", "", "RegimenFiscalReceptor"),
+    (".//cfdi:Receptor", "DomicilioFiscalReceptor", "", "DomicilioFiscalReceptor"),
+    -- -> I left the review here < ---
     # CFDI 4.0 Timbre Fiscal Digital
     (".//tfd:TimbreFiscalDigital", "UUID", "", "Folio Fiscal"),
     (".//tfd:TimbreFiscalDigital", "FechaTimbrado", "", "Fecha Timbrado"),
