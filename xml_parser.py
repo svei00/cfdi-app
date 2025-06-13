@@ -114,6 +114,7 @@ CFDI_FIELDS_TO_EXTRACT = [
     (".//cfdi:Comprobante", "Exportacion", "", "Exportacion"),
     (".//cfdi:Comprobante", "CondicionesDePago", "", "Condiciones de Pago"),
     (".//cfdi:Comprobante", "TipoCambio", "1.0", "TipoCambio"),
+    # (".//cfdi:Comprobante", "NumCtaPago", "", "NumCtaPago"),
     # CFDI 4.0 Relacionados
     (".//cfdi:CfdiRelacionados", "TipoRelacion", "", "TipoDeRelacion"),
     (".//cfdi:CfdiRelacionados", "UUID", "", "UUID_Relacionados"),
@@ -130,7 +131,9 @@ CFDI_FIELDS_TO_EXTRACT = [
     (".//cfdi:Receptor", "UsoCFDI", "", "Uso CFDI Receptor"),
     (".//cfdi:Receptor", "RegimenFiscalReceptor", "", "RegimenFiscalReceptor"),
     (".//cfdi:Receptor", "DomicilioFiscalReceptor", "", "DomicilioFiscalReceptor"),
-    -- -> I left the review here < ---
+    # CFDI 4.0 Receptor (additional fields)
+    (".//cfdi:Receptor", "ResidenciaFiscal", "", "Residencia Fiscal"),
+    (".//cfdi:Receptor", "NumRegIdTrib", "", "NumRegIdTrib"),
     # CFDI 4.0 Timbre Fiscal Digital
     (".//tfd:TimbreFiscalDigital", "UUID", "", "Folio Fiscal"),
     (".//tfd:TimbreFiscalDigital", "FechaTimbrado", "", "Fecha Timbrado"),
@@ -138,8 +141,9 @@ CFDI_FIELDS_TO_EXTRACT = [
     # (".//tfd:TimbreFiscalDigital", "NoCertificadoSAT", "", "No Certificado SAT"),
     # (".//tfd:TimbreFiscalDigital", "SelloSAT", "", "Sello SAT"),
     # CFDI 4.0 Impuestos Trasladados
-    (".//cfdi:Impuestos", "TotalImpuestosTrasladados", "0.00", "IVA"),
+    (".//cfdi:Impuestos", "TotalImpuestosTrasladados", "0.00", "Total Trasladados"),
     # CFDI 4.0 Impuestos Retenidos
+    (".//cfdi:Impuestos", "TotalImpuestosRetenidos", "0.00", "Total Retenidos"),
     # (".//cfdi:Impuestos", "TotalImpuestosRetenidos", "0.00", "ISR Retenido"),
     # CFDI 4.0 Impuestos Locales
     (".//implocal:ImpuestosLocales", "TotaldeRetenciones",
