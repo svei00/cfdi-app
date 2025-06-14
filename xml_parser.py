@@ -274,6 +274,18 @@ def extract_tax_details(root, data):
             data["ISH"] = f"{float(data.get('ISH', '0.00')) + importe:.2f}"
 
 
+def extract_iedu_data(root, data):
+    """
+    Extracts Specific Data from IEDU Complement
+    """
+    iedu_complement = root.find(
+        ".//cfdi:ComplementoConcepto/iedu:instEducativas", NAMESPACES)
+    if iedu_complement is not None:
+        data["CURP Dependiente"] = iedu_complement.get("CURP", "")
+        data["Nivel Educativo"] = iedu_complement.get("nivelEducativo", "")
+        data["Nombre Dependiente"] = iedu_complement.get("nombreAlumno", "")
+
+
 def parse_xml_invoice(xml_file_path):
     """
     Parses a single XML invoice file, extracts specified fields (data), and determines its type (Invoice or Nomina).
@@ -293,26 +305,36 @@ def parse_xml_invoice(xml_file_path):
         tree = ET.parse(xml_file_path)
         root = tree.getroot()
 
-        """ 
-        Initialize all possible fields to None to ensure consitency in DataFrame columns
-        regardless of CFDI type.
         """
-        all_possible_fields = [col_name for _, _,
-                               _, col_name in CFDI_FIELDS_TO_EXTRACT]
-        all_possible_fields.extend(
-            [col_name for _, _, _, col_name in NOMINA_FIELDS_TO_EXTRACT])
-        all_possible_fields.extend(['Descripcion', 'TotalGravado', 'TotalExento', 'Source.Name', 'CDFI_Type', 'Factura',  # For the merged Serie+Folio field
-                                    'ImpLocal_TrasladadosLocales_Details'  # For the concatenated implocal details
-                                    ])
-        # Using set to avoud duplicates
-        for field in set(all_possible_fields):
+        Initialize all possible fields to None or empty strings.
+        This ensueres all columns are present even if not populated
+        """
+        for field in INVOICE_COLUMNS_ORDER:
+            # I am using None for flexibility. Pandas will convert to Nan/empty for Excel
             data[field] = None
 
-        # Extract Serie and Folio to create the merged "Factura" field
-        serie = root.get('Serie', '')
-        folio = root.get('Folio', '')
-        # Maybe cobe back to chang back None to ""
-        data['Factura'] = f"{serie}-{folio}".strip() if serie or folio else None
+        # Initializes Nomina specific fields too, for consistency across all the process XMLs
+        for _, _, _, col_name in NOMINA_FIELDS_TO_EXTRACT:
+            data[col_name] = None
+        data["TotalGravado"] = None
+        data["TotalExento"] = None
+        data["TotalDeducciones"] = None
+        data["TotalOtrosPagos"] = None
+
+        # """
+        # Initialize all possible fields to None to ensure consitency in DataFrame columns
+        # regardless of CFDI type.
+        # """
+        # all_possible_fields = [col_name for _, _,
+        #                        _, col_name in CFDI_FIELDS_TO_EXTRACT]
+        # all_possible_fields.extend(
+        #     [col_name for _, _, _, col_name in NOMINA_FIELDS_TO_EXTRACT])
+        # all_possible_fields.extend(['Descripcion', 'TotalGravado', 'TotalExento', 'Source.Name', 'CDFI_Type', 'Factura',  # For the merged Serie+Folio field
+        #                             'ImpLocal_TrasladadosLocales_Details'  # For the concatenated implocal details
+        #                             ])
+        # # Using set to avoud duplicates
+        # for field in set(all_possible_fields):
+        #     data[field] = None
 
         # Exrfact CFDI 4.0 fields
         for xpath, attr_name, default_val, col_name in CFDI_FIELDS_TO_EXTRACT:
@@ -335,6 +357,9 @@ def parse_xml_invoice(xml_file_path):
             data['Descripcion'] = ' | '.join(
                 descripcions) if descripcions else None
 
+        # Extract and aggregate tax details.
+        extract_tax_details(root, data)
+
         # Handle impLocal:TransladosLocales (multiple nodes)
         # This will concatenate details of all local translado impuesto into a single string
         traslados_locales_details = []  # create a list
@@ -349,14 +374,47 @@ def parse_xml_invoice(xml_file_path):
         data["ImpLocal_TrasladadosLocales_Details"] = ' | '.join(
             traslados_locales_details) if traslados_locales_details else None
 
+        # Extract Serie and Folio to create the merged "Factura" field
+        serie = root.get('Serie', '')
+        folio = root.get('Folio', '')
+        # Maybe cobe back to chang back None to ""
+        data['Factura'] = f"{serie}-{folio}".strip() if serie or folio else None
+
+        # Placeholders for fields requiring external logic or not direct directly in the XML
+        # These fields will remain empty ("") in the output for excel for now.
+        # Future. External validation (Ex. UUID check, internal database)
+        data["Verificado o Asociado"] = ""
+        data["Estado SAT"] = ""  # Future. SAT status lookup (Ex. Cancelado)
+        # Future. Payment status tracking (Ex. Pagado, No Pagado)
+        data["EstadoPago"] = ""
+        # Future. Payment date tracking (Ex. Date of payment)
+        data["Fecha de Pago"] = ""
+        # data["TotalOriginal"] = "" # Double check this field in the documentation otherwise remove.
+        # Future. Fuel type tracking (Ex. Gasolina, Diesel)
+        data["Combustible"] = ""
+
+        """
+        Emisor/Receptor Addresses/Location - There are no consistency avalieble as direct attribute in the XML 
+        They often resided in nested "cfdi:Domiclio" elements which are less common in CFDI 4.0 direct attributes
+        or require external data sources. For now they will be empty
+        """
+        data["Direccion Emisor"] = ""
+        data["Localidad Emisor"] = ""
+        data["Direccion Receptor"] = ""
+        data["Localidad Receptor"] = ""
+
         # Nomina 1.2 fields
         # Detect and Extract Nomina 1.2 complement data.
+        # Handle Complements and CFDI_Type
+        detected_complements = []  # Keep in a list
         nomina_complement = root.find(".//nomina12:Nomina", NAMESPACES)
         if nomina_complement is not None:
             data['CFDI_Type'] = 'Nomina'
+            detected_complements.append('NOMINA')
             for xpath, attr_name, default_val, col_name in NOMINA_FIELDS_TO_EXTRACT:
                 # Need to find elements relative to the root again, or adjust the XPath for 'nomina_complement'
                 # The easy way and conssistent with current XPaths, re-find from root
+                # Re-find from root for consistency
                 element = root.find(xpath, NAMESPACES)
                 if element is not None:
                     if attr_name:
@@ -394,8 +452,20 @@ def parse_xml_invoice(xml_file_path):
             data['TotalDeducciones'] = None
             data['TotalOtrosPagos'] = None
 
-        # Get Source.Name (filename)
-        data['Source.Name'] = os.path.basename(xml_file_path)
+        # Detect other complements and add to the "Complemento" field.
+        if root.find(".//cfdi:Complemento/iedu:instEducativa", NAMESPACES) is not None:
+            detected_complements.append('IEDU')
+            extract_iedu_data(root, data)  # Extract IEDU specific data
+
+        if root.find(".//cfdi:Complemento/implocal:ImpuestosLocales", NAMESPACES) is None:
+            detected_complements.append('IMPLOCAL')
+
+        # Set the complement column
+        data["Complemento"] = ", ".join(
+            detected_complements) if detected_complements else None
+
+        # Archivo XML (filename)
+        data['Archivo XML'] = os.path.basename(xml_file_path)
 
     except ET.ParseError as e:
         print(f"Error parsing XML file {xml_file_path}: {e}")
