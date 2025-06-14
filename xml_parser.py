@@ -187,6 +187,93 @@ NOMINA_FIELDS_TO_EXTRACT = [
 ]
 
 
+def extract_tax_details(root, data):
+    """
+    Extracts and agregates various tax details (IVA, IEPS, Retenidos) from XML.
+    """
+    # Initialices all specific tax fields to 0.00
+    tax_fields = [
+        "Total_IEPS", "IVA_16%", "Retenido_IVA", "Retenido_ISR", "ISH",
+        "IVA_8%", "IVA_Ret_6%", "IEPS_3%", "IEPS_6%", "IEPS_7%", "IEPS_8%",
+        "IEPS_9%", "IEPS_26.5%", "IEPS_30%", "IEPS_30.4%", "IEPS_53%", "IEPS_160%",
+    ]
+    for field in tax_fields:
+        data[field] = "0.00"
+
+    # Process Trasladados (IVA, IEPS) from global Impuestos and Conceptos-level Impuestos
+    for traslado in root.findall(".//cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", NAMESPACES) + \
+            root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", NAMESPACES):
+        impuesto_code = traslado.get("Impuesto", "")
+        tipo_factor = traslado.get("TipoFactor", "")
+        tasa_ocuota = traslado.get("TasaOCuota", "")
+        importe_str = traslado.get("Importe", "0.00")
+        try:
+            importe = float(importe_str)
+        except ValueError:
+            importe = 0.0
+
+        if impuesto_code == "002" and tipo_factor == "Tasa":  # IVA
+            if tasa_ocuota == "0.160000":
+                data["IVA 16%"] = f"{float(data.get('IVA 16%', '0.00')) + importe:.2f}"
+            elif tasa_ocuota == "0.080000":
+                data["IVA 8%"] = f"{float(data.get('IVA 8%', '0.00')) + importe:.2f}"
+        elif impuesto_code == "003" and tipo_factor == "Tasa":  # IEPS
+            data["Total_IEPS"] = f"{float(data.get('Total_IEPS', '0.00')) + importe:.2f}"
+            if tasa_ocuota == "0.030000":
+                data["IEPS 3%"] = f"{float(data.get('IEPS 3%', '0.00')) + importe:.2f}"
+            elif tasa_ocuota == "0.060000":
+                data["IEPS 6%"] = f"{float(data.get('IEPS 6%', '0.00')) + importe:.2f}"
+            elif tasa_ocuota == "0.070000":
+                data["IEPS 7%"] = f"{float(data.get('IEPS 7%', '0.00')) + importe:.2f}"
+            elif tasa_ocuota == "0.080000":
+                data["IEPS 8%"] = f"{float(data.get('IEPS 8%', '0.00')) + importe:.2f}"
+            elif tasa_ocuota == "0.090000":
+                data["IEPS 9%"] = f"{float(data.get('IEPS 9%', '0.00')) + importe:.2f}"
+            elif tasa_ocuota == "0.265000":
+                data["IEPS 26.5%"] = f"{float(data.get('IEPS 26.5%', '0.00')) + importe:.2f}"
+            elif tasa_ocuota == "0.300000":
+                data["IEPS 30%"] = f"{float(data.get('IEPS 30%', '0.00')) + importe:.2f}"
+            elif tasa_ocuota == "0.304000":
+                data["IEPS 30.4%"] = f"{float(data.get('IEPS 30.4%', '0.00')) + importe:.2f}"
+            elif tasa_ocuota == "0.530000":
+                data["IEPS 53%"] = f"{float(data.get('IEPS 53%', '0.00')) + importe:.2f}"
+            elif tasa_ocuota == "0.160000":
+                data["IEPS 160%"] = f"{float(data.get('IEPS 160%', '0.00')) + importe:.2f}"
+
+    # Process Retenciones (ISR, IVA) from global Impuestos and Conceptos-level Impuestos
+    for retencion in root.findall(".//cfdi:Impuestos/cfdi:Retenciones/cfdi:Retencion", NAMESPACES) + \
+            root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Retenciones/cfdi:Retencion", NAMESPACES):
+        impuesto_code = retencion.get("Impuesto", "")
+        importe_str = retencion.get("Importe", "0.00")
+        try:
+            importe = float(importe_str)
+        except ValueError:
+            importe = 0.0
+
+        if impuesto_code == "001":  # ISR
+            data["Retenido_ISR"] = f"{float(data.get('Retenido_ISR', '0.00')) + importe:.2f}"
+        elif impuesto_code == "002":  # IVA
+            data["Retenido_IVA"] = f"{float(data.get('Retenido_IVA', '0.00')) + importe:.2f}"
+            # Check for specific IVA Ret rate (ex. 6%) if TasaCuota is avalieble for Retenciones.
+            # Note: TasaOCuota is not always present for retenciones at the same level as Traslados.
+            # Assuming it might be avalieble in some cases:
+            tasa_ocuota_ret = retencion.get("TasaOCuota", "")
+            if tasa_ocuota_ret == "0.060000":
+                data["IVA Ret 6%"] = f"{float(data.get('IVA Ret 6%', '0.00')) + importe:.2f}"
+
+    # Process the local taxes (ISH)
+    for traslado_local in root.findall(".//implocal:ImpuestosLocales/implocal:TrasladoLocales", NAMESPACES):
+        imp_local_trasladado = traslado_local.get("ImpLocTrasladado", "")
+        importe_str = traslado_local.get("Importe", "0.00")
+        try:
+            importe = float(importe_str)
+        except ValueError:
+            importe = 0.0
+
+        if imp_local_trasladado == "ISH":
+            data["ISH"] = f"{float(data.get('ISH', '0.00')) + importe:.2f}"
+
+
 def parse_xml_invoice(xml_file_path):
     """
     Parses a single XML invoice file, extracts specified fields (data), and determines its type (Invoice or Nomina).
