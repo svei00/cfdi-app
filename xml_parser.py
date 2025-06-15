@@ -3,6 +3,7 @@
 # source: http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd
 import xml.etree.ElementTree as ET
 import os
+from datetime import datetime  # Import datetime for date formatting
 
 """
 Define the XML namespaces used in CFDI 4.0 for parsing.
@@ -15,8 +16,101 @@ NAMESPACES = {
     'tfd': 'http://www.sat.gob.mx/TimbreFiscalDigital',
     'iedu': 'http://www.sat.gob.mx/iedu',
     'implocal': 'http://www.sat.gob.mx/implocal',  # Local Taxes complement like ISH
+    # For Combustible detection (ComercioExterior 1.1) - not used for primary fuel detection
+    'cce11': 'http://www.sat.gob.mx/ComercioExterior11',
     'xsi': 'http://www.w3.org/2001/XMLSchema-instance'
 }
+
+# Define the full URI for the CFDI namespace for direct attribute access
+CFDI_URI = "http://www.sat.gob.mx/cfd/4"
+TFD_URI = "http://www.sat.gob.mx/TimbreFiscalDigital"
+
+# --- MAPPING DICTIONARIES ---
+# Standard SAT catalogs for TipoDeComprobante, FormaPago, MetodoPago, UsoCFDI
+TIPO_COMPROBANTE_MAP = {
+    "I": "Factura",  # Ingreso
+    "E": "Egreso",  # Egreso (Nota de crédito)
+    "T": "Traslado",  # Traslado
+    "P": "Pago",    # Recepción de pagos
+    "N": "Nómina"   # Nómina (though handled by CFDI_Type in this app)
+}
+
+FORMA_PAGO_MAP = {
+    "01": "Efectivo",
+    "02": "Cheque nominativo",
+    "03": "Transferencia electrónica de fondos",
+    "04": "Tarjeta de crédito",
+    "05": "Monedero electrónico",
+    "06": "Dinero electrónico",
+    "08": "Tarjeta de débito",
+    "12": "Dación en pago",
+    "13": "Pago por subrogación",
+    "14": "Pago por consignación",
+    "15": "Condenación o remisión de deuda",
+    "17": "Compensación",
+    "23": "Novación",
+    "24": "Confusión",
+    "25": "Condonación",
+    "26": "Remisión de deuda",
+    "27": "Prescripción o caducidad",
+    "28": "Tarjeta de servicios",
+    "29": "Aplicación de anticipos",
+    "30": "Documento bancario",
+    "31": "Intermediario de pagos",
+    "99": "Por definir"
+}
+
+METODO_PAGO_MAP = {
+    "PUE": "Pago en una sola exhibición",
+    "PPD": "Pago en parcialidades o diferido"
+}
+
+USO_CFDI_MAP = {
+    "G01": "Adquisición de mercancías",
+    "G02": "Devoluciones, descuentos o bonificaciones",
+    "G03": "Gastos en general",
+    "I01": "Construcciones",
+    "I02": "Mobiliario y equipo de oficina por inversiones",
+    "I03": "Equipo de transporte",
+    "I04": "Equipo de cómputo y accesorios",
+    "I05": "Dados, troqueles, moldes, matrices y herramental",
+    "I06": "Comunicaciones telefónicas",
+    "I07": "Comunicaciones satelitales",
+    "I08": "Otra maquinaria y equipo",
+    "D01": "Honorarios médicos, dentales y gastos hospitalarios",
+    "D02": "Gastos médicos por incapacidad o discapacidad",
+    "D03": "Gastos funerales",
+    "D04": "Donativos",
+    "D05": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)",
+    "D06": "Aportaciones voluntarias al SAR",
+    "D07": "Primas por seguros de gastos médicos",
+    "D08": "Gastos de transportación escolar obligatoria",
+    "D09": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones",
+    "D10": "Pagos por servicios educativos (colegiaturas)",
+    "P01": "Por definir"
+}
+
+REGIMEN_FISCAL_RECEPTOR_MAP = {
+    "601": "General de Ley Personas Morales",
+    "603": "Personas Morales con Fines no Lucrativos",
+    "605": "Sueldos y Salarios e Ingresos Asimilados a Salarios",
+    "606": "Arrendamiento",
+    "607": "Régimen de Enajenación o Adquisición de Bienes",
+    "608": "Demas ingresos",
+    "609": "Consolidación",
+    "610": "Residentes en el Extranjero sin Establecimiento Permanente en México",
+    "611": "Ingresos por Dividendos (socios y accionistas)",
+    "612": "Personas Físicas con Actividades Empresariales y Profesionales",
+    "614": "Ingresos por Intereses",
+    "615": "Régimen de los Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras",
+    "616": "Sin Obligaciones Fiscales",
+    "620": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos",
+    "621": "Incorporación Fiscal",
+    "622": "Actividades Empresariales con ingresos a través de Plataformas Tecnológicas",
+    "623": "Simplificado de Confianza",
+    "624": "Plataformas Tecnológicas"  # This could be similar to 622
+}
+# --- END MAPPING DICTIONARIES ---
 
 # Define the precise order of columns for the Invoice sheet.
 # This list will be used to ensure the DataFrame columns match this order when exporting to Excel.
@@ -35,7 +129,7 @@ INVOICE_COLUMN_ORDER = [
     "FechaPago",
     "Factura",            # Merged field: Serie + Folio
     "UUID",
-    "UUID Relacion",      # Corrected from UUID Relacionados to UUID Relacion
+    "UUID Relacion",
     "RFC Emisor",
     "Nombre Emisor",
     "LugarDeExpedicion",
@@ -43,7 +137,7 @@ INVOICE_COLUMN_ORDER = [
     "Nombre Receptor",
     "ResidenciaFiscal",
     "NumRegIdTrib",
-    "UsoCFDI",
+    "UsoCFDI",  # This will now be mapped to include description
     "SubTotal",
     "Descuento",
     "Total IEPS",
@@ -52,7 +146,6 @@ INVOICE_COLUMN_ORDER = [
     "Retenido ISR",
     "ISH",
     "Total",
-    # "TotalOriginal",      # REMOVED: Redundant as SubTotal and Total cover these aspects.
     "Total Trasladados",
     "Total Retenidos",
     "Total LocalTrasladado",
@@ -64,8 +157,7 @@ INVOICE_COLUMN_ORDER = [
     "Metodo de Pago",
     "NumCtaPago",
     "Condicion de Pago",
-    "Conceptos",          # Corrected from Descripcion to Conceptos
-    # Placeholder: Not typically found in standard CFDI XML.
+    "Conceptos",
     "Combustible",
     "IEPS 3%",
     "IEPS 6%",
@@ -77,52 +169,25 @@ INVOICE_COLUMN_ORDER = [
     "IEPS 53%",
     "IEPS 160%",
     "Archivo XML",
-    # Placeholder: Full address details not consistently in XML attributes.
     "Direccion Emisor",
-    # Placeholder: Full address details not consistently in XML attributes.
     "Localidad Emisor",
-    # Placeholder: Full address details not consistently in XML attributes.
     "Direccion Receptor",
-    # Placeholder: Full address details not consistently in XML attributes.
     "Localidad Receptor",
     "IVA 8%",
     "IEPS 30.4%",
     "IVA Ret 6%",
-    "RegimenFiscalReceptor",
-    "DomicilioFiscalReceptor",  # Postal code.
-    "CURP Dependiente",        # For IEDU Complement.
-    "Nivel Educativo",    # For IEDU Complement.
-    "Nombre Dependiente",      # For IEDU Complement.
+    "RegimenFiscalReceptor",  # This will now be mapped to include description
+    "DomicilioFiscalReceptor",
+    "CURP Dependiente",  # Reverted to Dependiente
+    "Nivel Educativo",
+    "Nombre Dependiente",  # Reverted to Dependiente
 ]
 
-# List of XML tags/attributes to extract for regular CFDI XML.
-# Each item is a tuple: (XPath, attribute_name_if_any, default_value_if_not_found, output_column_name)
-# For attributes, the XPath should point to the element containing the attribute and attribute_name_if_any should be the attribute name.
-# For element text, attribute_name_if_any should be "".
-# The output_column_name is how it will appear in the Excel file.
-CFDI_FIELDS_TO_EXTRACT = [
-    # CFDI 4.0 Invoice fields (Attributes)
-    (".//cfdi:Comprobante", "Version", "4.0", "Version"),
-    (".//cfdi:Comprobante", "TipoDeComprobante", "", "Tipo"),
-    # Corrected output column name
-    (".//cfdi:Comprobante", "Fecha", "", "Fecha Emision"),
-    (".//cfdi:Comprobante", "LugarExpedicion", "",
-     "LugarDeExpedicion"),  # Corrected output column name
-    (".//cfdi:Comprobante", "SubTotal", "0.00", "SubTotal"),
-    (".//cfdi:Comprobante", "Descuento", "0.00", "Descuento"),
-    (".//cfdi:Comprobante", "Total", "0.00", "Total"),
-    (".//cfdi:Comprobante", "Moneda", "", "Moneda"),
-    (".//cfdi:Comprobante", "FormaPago", "", "FormaDePago"),
-    (".//cfdi:Comprobante", "MetodoPago", "", "Metodo de Pago"),
-    (".//cfdi:Comprobante", "Exportacion", "", "Exportacion"),
-    (".//cfdi:Comprobante", "CondicionesDePago", "", "Condicion de Pago"),
-    (".//cfdi:Comprobante", "TipoCambio", "1.0",
-     "Tipo De Cambio"),  # Corrected output column name
-    (".//cfdi:Comprobante", "NumCtaPago", "", "NumCtaPago"),
-
+# List of XML tags/attributes to extract for CFDI elements not directly on the Comprobante root.
+# Note: UsoCFDI, RegimenFiscalReceptor are handled explicitly in parse_xml_invoice with mapping
+CFDI_CHILD_ELEMENTS_TO_EXTRACT = [
     # CFDI Relacionados
     (".//cfdi:CfdiRelacionados", "TipoRelacion", "", "TipoDeRelacion"),
-    # Corrected output column name and XPath to CfdiRelacionado
     (".//cfdi:CfdiRelacionado", "UUID", "", "UUID Relacion"),
 
     # Emisor
@@ -133,27 +198,14 @@ CFDI_FIELDS_TO_EXTRACT = [
     # Receptor
     (".//cfdi:Receptor", "Rfc", "", "RFC Receptor"),
     (".//cfdi:Receptor", "Nombre", "", "Nombre Receptor"),
-    # Corrected output column name
-    (".//cfdi:Receptor", "UsoCFDI", "", "UsoCFDI"),
+    # UsoCFDI and RegimenFiscalReceptor are handled directly in parse_xml_invoice with mapping
     (".//cfdi:Receptor", "ResidenciaFiscal", "", "ResidenciaFiscal"),
     (".//cfdi:Receptor", "NumRegIdTrib", "", "NumRegIdTrib"),
-    (".//cfdi:Receptor", "RegimenFiscalReceptor", "", "RegimenFiscalReceptor"),
-    (".//cfdi:Receptor", "DomicilioFiscalReceptor", "", "DomicilioFiscalReceptor"),
+    (".//cfdi:Receptor", "DomicilioFiscalReceptor",
+     "", "DomicilioFiscalReceptor"),  # Postal Code
 
-    # Timbre Fiscal Digital
-    # Corrected output column name (was Folio Fiscal)
-    (".//tfd:TimbreFiscalDigital", "UUID", "", "UUID"),
-    (".//tfd:TimbreFiscalDigital", "FechaTimbrado", "", "Fecha Timbrado"),
-
-    # Impuestos Globales (Totals)
-    (".//cfdi:Impuestos", "TotalImpuestosTrasladados", "0.00", "Total Trasladados"),
-    (".//cfdi:Impuestos", "TotalImpuestosRetenidos", "0.00", "Total Retenidos"),
-
-    # Implocal complements (Totals)
-    (".//implocal:ImpuestosLocales",
-     "TotaldeRetenciones", "0.00", "Total LocalRetenido"),
-    (".//implocal:ImpuestosLocales", "TotaldeTraslados",
-     "0.00", "Total LocalTrasladado"),
+    # Timbre Fiscal Digital (UUID and FechaTimbrado are handled explicitly for formatting)
+    # UUID is handled explicitly in parse_xml_invoice
 ]
 
 # List of XML tags/attributes to extract for Nomina complement 1.2 XML.
@@ -187,13 +239,15 @@ NOMINA_FIELDS_TO_EXTRACT = [
     # Nomina 1.2 Deducciones
     # (".//nomina12:Deducciones", "TotalOtrasDeducciones", "0.00", "Total Otras Deducciones"),
     (".//nomina12:Deducciones", "TotalImpuestosRetenidos",
-     "0.00", "ImpuestosRetenidos"),  # Corrected output column name
+     "0.00", "ImpuestosRetenidos"),
 ]
 
 
 def extract_tax_details(root, data):
     """
-    Extracts and aggregates various tax details (IVA, IEPS, Retenidos) from XML.
+    Extracts and aggregates various tax details (IVA, IEPS, Retenidos, Local Taxes) from XML.
+    Prioritizes global totals for 'Total Trasladados' and 'Total Retenidos',
+    and sums specific taxes from concepts to avoid double counting.
     """
     # Initialize all specific tax fields to "0.00"
     tax_fields = [
@@ -204,19 +258,40 @@ def extract_tax_details(root, data):
     for field in tax_fields:
         data[field] = "0.00"
 
-    # Process Traslados (IVA, IEPS) from global Impuestos and Concepto-level Impuestos
-    for traslado in root.findall(".//cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", NAMESPACES) + \
-            root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", NAMESPACES):
-        impuesto_code = traslado.get("Impuesto", "")
-        tipo_factor = traslado.get("TipoFactor", "")
-        tasa_ocuota = traslado.get("TasaOCuota", "")
-        # Getting raw value, handle None explicitly
-        importe_str = traslado.get("Importe")
+    # --- Process Global Tax Totals (Total Trasladados, Total Retenidos) ---
+    # These should come directly from the main <cfdi:Impuestos> element if present
+    global_impuestos = root.find(".//cfdi:Impuestos", NAMESPACES)
+    if global_impuestos is not None:
+        # Access attributes without URI prefix as they are not prefixed in XML itself
+        total_trasladados_str = global_impuestos.get(
+            "TotalImpuestosTrasladados", "0.00").strip()
+        total_retenidos_str = global_impuestos.get(
+            "TotalImpuestosRetenidos", "0.00").strip()
 
-        # Robust conversion to float, handling None and invalid strings
         try:
-            importe = float(importe_str) if importe_str is not None else 0.00
-        except (ValueError, TypeError):  # Catch both invalid string and NoneType
+            data["Total Trasladados"] = f"{float(total_trasladados_str):.2f}"
+        except (ValueError, TypeError):
+            data["Total Trasladados"] = "0.00"
+
+        try:
+            data["Total Retenidos"] = f"{float(total_retenidos_str):.2f}"
+        except (ValueError, TypeError):
+            data["Total Retenidos"] = "0.00"
+    else:
+        data["Total Trasladados"] = "0.00"
+        data["Total Retenidos"] = "0.00"
+
+    # --- Process Specific Traslados (IVA, IEPS) from Conceptos ONLY ---
+    # This avoids double-counting if global Impuestos sums up concepts implicitly.
+    for concepto_traslado in root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", NAMESPACES):
+        impuesto_code = concepto_traslado.get("Impuesto", "")
+        tipo_factor = concepto_traslado.get("TipoFactor", "")
+        tasa_ocuota = concepto_traslado.get("TasaOCuota", "")
+        importe_str = concepto_traslado.get("Importe", "0.00")
+
+        try:
+            importe = float(importe_str)
+        except (ValueError, TypeError):
             importe = 0.00
 
         if impuesto_code == "002" and tipo_factor == "Tasa":  # IVA
@@ -225,7 +300,6 @@ def extract_tax_details(root, data):
             elif tasa_ocuota == "0.080000":
                 data["IVA 8%"] = f"{float(data.get('IVA 8%', '0.00')) + importe:.2f}"
         elif impuesto_code == "003" and tipo_factor == "Tasa":  # IEPS
-            # Corrected from Total_IEPS
             data["Total IEPS"] = f"{float(data.get('Total IEPS', '0.00')) + importe:.2f}"
             if tasa_ocuota == "0.030000":
                 data["IEPS 3%"] = f"{float(data.get('IEPS 3%', '0.00')) + importe:.2f}"
@@ -245,45 +319,58 @@ def extract_tax_details(root, data):
                 data["IEPS 30.4%"] = f"{float(data.get('IEPS 30.4%', '0.00')) + importe:.2f}"
             elif tasa_ocuota == "0.530000":
                 data["IEPS 53%"] = f"{float(data.get('IEPS 53%', '0.00')) + importe:.2f}"
-            elif tasa_ocuota == "1.600000":  # Corrected value for 160% IEPS
+            elif tasa_ocuota == "1.600000":
                 data["IEPS 160%"] = f"{float(data.get('IEPS 160%', '0.00')) + importe:.2f}"
 
-    # Process Retenciones (ISR, IVA) from global Impuestos and Concepto-level Impuestos
-    for retencion in root.findall(".//cfdi:Impuestos/cfdi:Retenciones/cfdi:Retencion", NAMESPACES) + \
-            root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Retenciones/cfdi:Retencion", NAMESPACES):
-        impuesto_code = retencion.get("Impuesto", "")
-        # Getting raw value, handle None explicitly
-        importe_str = retencion.get("Importe")
+    # --- Process Specific Retenciones (ISR, IVA) from Conceptos ONLY ---
+    for concepto_retencion in root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Retenciones/cfdi:Retencion", NAMESPACES):
+        impuesto_code = concepto_retencion.get("Impuesto", "")
+        importe_str = concepto_retencion.get("Importe", "0.00")
 
         try:
-            importe = float(importe_str) if importe_str is not None else 0.00
+            importe = float(importe_str)
         except (ValueError, TypeError):
             importe = 0.00
 
         if impuesto_code == "001":  # ISR
-            # Corrected from Retenido_ISR
             data["Retenido ISR"] = f"{float(data.get('Retenido ISR', '0.00')) + importe:.2f}"
         elif impuesto_code == "002":  # IVA
-            # Corrected from Retenido_IVA
             data["Retenido IVA"] = f"{float(data.get('Retenido IVA', '0.00')) + importe:.2f}"
-            tasa_ocuota_ret = retencion.get("TasaOCuota", "")
+            tasa_ocuota_ret = concepto_retencion.get("TasaOCuota", "")
             if tasa_ocuota_ret == "0.060000":
                 data["IVA Ret 6%"] = f"{float(data.get('IVA Ret 6%', '0.00')) + importe:.2f}"
 
-    # Process the local taxes (ISH)
-    # Corrected XPath and logic
+    # --- Process Local Taxes (ISH, Total LocalTrasladado, Total LocalRetenido) ---
+    total_local_trasladado_sum = 0.0
     for traslado_local in root.findall(".//implocal:ImpuestosLocales/implocal:TrasladosLocales", NAMESPACES):
         imp_local_trasladado = traslado_local.get("ImpLocTrasladado", "")
-        # Getting raw value, handle None explicitly
-        importe_str = traslado_local.get("Importe")
+        tasa_de_traslado = traslado_local.get("TasadeTraslado", "")
+        importe_str = traslado_local.get("Importe", "0.00")
 
         try:
-            importe = float(importe_str) if importe_str is not None else 0.00
+            importe = float(importe_str)
         except (ValueError, TypeError):
             importe = 0.00
 
         if imp_local_trasladado == "ISH":
             data["ISH"] = f"{float(data.get('ISH', '0.00')) + importe:.2f}"
+        total_local_trasladado_sum += importe
+
+    data["Total LocalTrasladado"] = f"{total_local_trasladado_sum:.2f}"
+
+    total_local_retenido_sum = 0.0
+    for retencion_local in root.findall(".//implocal:ImpuestosLocales/implocal:RetencionesLocales", NAMESPACES):
+        # Make sure to get the correct attribute name
+        imp_local_retenido = retencion_local.get("ImpLocRetenido", "")
+        importe_str = retencion_local.get("Importe", "0.00")
+
+        try:
+            importe = float(importe_str)
+        except (ValueError, TypeError):
+            importe = 0.00
+
+        total_local_retenido_sum += importe
+    data["Total LocalRetenido"] = f"{total_local_retenido_sum:.2f}"
 
 
 def extract_iedu_data(root, data):
@@ -291,13 +378,13 @@ def extract_iedu_data(root, data):
     Extracts Specific Data from IEDU Complement
     """
     iedu_complement = root.find(
-        ".//cfdi:ComplementoConcepto/iedu:instEducativas", NAMESPACES)  # Corrected XPath for consistency
+        ".//cfdi:ComplementoConcepto/iedu:instEducativas", NAMESPACES)
     if iedu_complement is not None:
-        data["CURP Alumno"] = iedu_complement.get(
-            "CURP", "")  # Corrected column name
+        data["CURP Dependiente"] = iedu_complement.get(
+            "CURP", "")  # Changed to Dependiente
         data["Nivel Educativo"] = iedu_complement.get("nivelEducativo", "")
-        data["Nombre Alumno"] = iedu_complement.get(
-            "nombreAlumno", "")  # Corrected column name
+        data["Nombre Dependiente"] = iedu_complement.get(
+            "nombreAlumno", "")  # Changed to Dependiente
 
 
 def parse_xml_invoice(xml_file_path):
@@ -320,34 +407,130 @@ def parse_xml_invoice(xml_file_path):
         root = tree.getroot()
 
         """
-        Initialize all possible fields to None or empty strings.
+        Initialize all possible fields to None.
         This ensures all columns are present even if not populated
         """
-        for field in INVOICE_COLUMN_ORDER:  # Corrected variable name here
-            # Using None for flexibility. Pandas will convert to NaN/empty for Excel
+        for field in INVOICE_COLUMN_ORDER:
             data[field] = None
 
-        # Initializes Nomina specific fields too, for consistency across all the processed XMLs
-        for _, _, _, col_name in NOMINA_FIELDS_TO_EXTRACT:
-            # Ensure Nomina fields are not overwritten if they are also CFDI general fields
-            if col_name not in data:  # Check to prevent overwriting common fields
-                data[col_name] = None
-        data["TotalGravado"] = None
-        data["TotalExcento"] = None
-        data["TotalDeducciones"] = None
-        data["TotalOtrosPagos"] = None
+        # --- Explicitly Extract Root-Level CFDI Comprobante Attributes ---
+        # These attributes are on the namespaced <cfdi:Comprobante> element,
+        # but the attributes themselves are NOT namespaced in the XML.
+        # Therefore, use plain .get() without the URI prefix.
+        data["Version"] = root.get("Version", "4.0").strip()
+        # Use .get() without URI prefix as TipoDeComprobante is not namespaced in XML
+        tipo_comprobante_code = root.get("TipoDeComprobante", "").strip()
+        data["Tipo"] = TIPO_COMPROBANTE_MAP.get(
+            tipo_comprobante_code, "Desconocido")
 
-        # Extract CFDI 4.0 fields
-        for xpath, attr_name, default_val, col_name in CFDI_FIELDS_TO_EXTRACT:
+        # Fecha Emision
+        fecha_emision_raw = root.get("Fecha", "").strip()
+        if fecha_emision_raw:
+            try:
+                dt_object = datetime.strptime(
+                    fecha_emision_raw, "%Y-%m-%dT%H:%M:%S")
+                data["Fecha Emision"] = dt_object.strftime("%d/%m/%Y")
+            except ValueError:
+                data["Fecha Emision"] = ""
+
+        # SubTotal
+        subtotal_str = root.get("SubTotal", "0.00").strip()
+        try:
+            data["SubTotal"] = f"{float(subtotal_str):.2f}"
+        except (ValueError, TypeError):
+            data["SubTotal"] = "0.00"
+
+        # Descuento
+        descuento_str = root.get("Descuento", "0.00").strip()
+        try:
+            data["Descuento"] = f"{float(descuento_str):.2f}"
+        except (ValueError, TypeError):
+            data["Descuento"] = "0.00"
+
+        # Total
+        total_str = root.get("Total", "0.00").strip()
+        try:
+            data["Total"] = f"{float(total_str):.2f}"
+        except (ValueError, TypeError):
+            data["Total"] = "0.00"
+
+        data["Moneda"] = root.get("Moneda", "").strip()
+        data["Tipo De Cambio"] = root.get("TipoCambio", "1.0").strip()
+
+        # FormaDePago
+        forma_pago_code = root.get("FormaPago", "").strip()
+        data["FormaDePago"] = f"{forma_pago_code} - {FORMA_PAGO_MAP.get(forma_pago_code, 'Desconocido')}" if forma_pago_code else None
+
+        # Metodo de Pago
+        metodo_pago_code = root.get("MetodoPago", "").strip()
+        data["Metodo de Pago"] = f"{metodo_pago_code} - {METODO_PAGO_MAP.get(metodo_pago_code, 'Desconocido')}" if metodo_pago_code else None
+
+        data["LugarDeExpedicion"] = root.get("LugarExpedicion", "").strip()
+        data["Condicion de Pago"] = root.get(
+            "CondicionesDePago", "").strip()  # Note XML is CondicionesDePago
+        data["NumCtaPago"] = root.get("NumCtaPago", "").strip()
+        data["Exportacion"] = root.get("Exportacion", "").strip()
+
+        # --- Extract Timbre Fiscal Digital Attributes ---
+        # Attributes on tfd:TimbreFiscalDigital are also NOT namespaced.
+        timbre_fiscal_digital = root.find(
+            ".//tfd:TimbreFiscalDigital", NAMESPACES)
+        if timbre_fiscal_digital is not None:
+            data["UUID"] = timbre_fiscal_digital.get("UUID", "").strip()
+            fecha_timbrado_raw = timbre_fiscal_digital.get(
+                "FechaTimbrado", "").strip()
+            if fecha_timbrado_raw:
+                try:
+                    dt_object = datetime.strptime(
+                        fecha_timbrado_raw, "%Y-%m-%dT%H:%M:%S")
+                    data["Fecha Timbrado"] = dt_object.strftime(
+                        "%d/%m/%Y %H:%M:%S")
+                except ValueError:
+                    data["Fecha Timbrado"] = ""
+        # --- End Explicit Extraction for root/timbre attributes ---
+
+        # Extract other child elements from CFDI_CHILD_ELEMENTS_TO_EXTRACT
+        # These generally refer to attributes that don't need special namespace handling on the attribute name itself
+        for xpath, attr_name, default_val, col_name in CFDI_CHILD_ELEMENTS_TO_EXTRACT:
             element = root.find(xpath, NAMESPACES)
             if element is not None:
-                if attr_name:  # If an attribute is specified, get its value
-                    value = element.get(attr_name, default_val)
-                else:  # It's element text (though most CFDI data is attributes)
+                if attr_name:
+                    value = element.get(attr_name, default_val).strip() if element.get(
+                        attr_name) is not None else default_val  # Added strip()
+                else:
                     value = element.text.strip() if element.text is not None else default_val
             else:
                 value = default_val
             data[col_name] = value
+
+        # --- UsoCFDI mapping ---
+        # Special handling for UsoCFDI since its mapping is external
+        # The UsoCFDI attribute is on the Receptor element, which itself is namespaced by cfdi.
+        # The attribute "UsoCFDI" itself is NOT namespaced (no cfdi:UsoCFDI in XML).
+        uso_cfdi_element = root.find(".//cfdi:Receptor", NAMESPACES)
+        if uso_cfdi_element is not None:
+            uso_cfdi_code = uso_cfdi_element.get("UsoCFDI", "").strip()
+            if uso_cfdi_code:
+                data["UsoCFDI"] = f"{uso_cfdi_code} - {USO_CFDI_MAP.get(uso_cfdi_code, 'Desconocido')}"
+            else:
+                data["UsoCFDI"] = None
+        else:
+            # Ensure it's explicitly None if receptor not found
+            data["UsoCFDI"] = None
+
+        # --- RegimenFiscalReceptor mapping ---
+        regimen_fiscal_receptor_element = root.find(
+            ".//cfdi:Receptor", NAMESPACES)
+        if regimen_fiscal_receptor_element is not None:
+            regimen_code = regimen_fiscal_receptor_element.get(
+                "RegimenFiscalReceptor", "").strip()
+            if regimen_code:
+                data[
+                    "RegimenFiscalReceptor"] = f"{regimen_code} - {REGIMEN_FISCAL_RECEPTOR_MAP.get(regimen_code, 'Desconocido')}"
+            else:
+                data["RegimenFiscalReceptor"] = None
+        else:
+            data["RegimenFiscalReceptor"] = None
 
         # Handle merged "Conceptos" from multiple Concepto nodes
         descriptions = []
@@ -355,37 +538,66 @@ def parse_xml_invoice(xml_file_path):
             description = concepto.get('Descripcion', '').strip()
             if description:
                 descriptions.append(description)
-        data['Conceptos'] = ' | '.join(
-            descriptions) if descriptions else None  # Corrected column name
+        data['Conceptos'] = ' | '.join(descriptions) if descriptions else None
 
         # Extract and aggregate tax details.
+        # This function handles Total Trasladados/Retenidos and others
         extract_tax_details(root, data)
 
-        # Handle implocal:TrasladosLocales (multiple nodes)
+        # Handle implocal:TrasladosLocales (multiple nodes) - details for debugging, not direct output column
         traslados_locales_details = []
-        # Corrected XPath
         for traslado_local in root.findall(".//implocal:ImpuestosLocales/implocal:TrasladosLocales", NAMESPACES):
             imp_loc_trasladado = traslado_local.get("ImpLocTrasladado", "")
             tasa_de_traslado = traslado_local.get("TasadeTraslado", "")
-            importe = traslado_local.get("Importe", "0.00")  # Ensure default
+            importe = traslado_local.get("Importe", "0.00")
             traslados_locales_details.append(
                 f"{imp_loc_trasladado}|{tasa_de_traslado}|{importe}")
         data["ImpLocal_TrasladosLocales_Details"] = ' | '.join(
             traslados_locales_details) if traslados_locales_details else None
 
         # Extract Serie and Folio to create the merged "Factura" field
-        serie = root.get('Serie', '')
-        folio = root.get('Folio', '')
+        # These are directly on the Comprobante element, so use plain .get()
+        serie = root.get("Serie", '').strip()
+        folio = root.get("Folio", '').strip()
         data['Factura'] = f"{serie}-{folio}".strip() if serie or folio else None
 
         # Placeholders for fields requiring external logic or not directly in the XML
         data["Verificado ó Asoc."] = ""
         data["Estado SAT"] = ""
         data["EstadoPago"] = ""
-        data["FechaPago"] = ""  # Corrected from "Fecha de Pago"
-        data["Combustible"] = ""
+        data["FechaPago"] = ""
 
-        # Emisor/Receptor Addresses/Location
+        # --- Combustible Detection Logic ---
+        # Define common ClaveProdServ codes for fuel (from SAT's catalog)
+        fuel_prod_serv_codes = ["15101514", "15101501", "15101502", "15101500"]
+        # Define common units for fuel
+        fuel_units = ["LTR", "LITRO", "GAL", "GALON", "KL", "KILO",
+                      "KILOGALON", "E48"]  # Added 'E48' as per your XML example
+        # Define keywords to look for in Description (case-insensitive)
+        fuel_keywords = ["MAGNA", "PREMIUM", "DIESEL",
+                         "GASOLINA", "COMBUSTIBLE", "GAS"]
+
+        combustible_detected = False
+        for concepto in root.findall(".//cfdi:Concepto", NAMESPACES):
+            clave_prod_serv = concepto.get("ClaveProdServ", "").strip()
+            # Correctly use ClaveUnidad and strip()
+            unidad = concepto.get("ClaveUnidad", "").upper().strip()
+            description = concepto.get("Descripcion", "").upper().strip()
+
+            # Primary check: By Product/Service Code
+            if clave_prod_serv in fuel_prod_serv_codes:
+                combustible_detected = True
+                break
+
+            # Secondary check: By Unit and Keywords in Description
+            if unidad in fuel_units and any(keyword in description for keyword in fuel_keywords):
+                combustible_detected = True
+                break
+
+        data["Combustible"] = "Yes" if combustible_detected else "No"
+        # --- End Combustible Detection Logic ---
+
+        # Emisor/Receptor Addresses/Location (Placeholders)
         data["Direccion Emisor"] = ""
         data["Localidad Emisor"] = ""
         data["Direccion Receptor"] = ""
@@ -402,7 +614,8 @@ def parse_xml_invoice(xml_file_path):
                 element = root.find(xpath, NAMESPACES)
                 if element is not None:
                     if attr_name:
-                        value = element.get(attr_name, default_val)
+                        value = element.get(attr_name, default_val).strip() if element.get(
+                            attr_name) is not None else default_val  # Added strip()
                     else:
                         value = element.text.strip() if element.text is not None else default_val
                 else:
@@ -413,17 +626,17 @@ def parse_xml_invoice(xml_file_path):
             total_gravado_percepciones = 0.0
             total_exento_percepciones = 0.0
             for percepcion in root.findall(".//nomina12:Percepcion", NAMESPACES):
-                importe_gravado_str = percepcion.get("ImporteGravado")
-                importe_exento_str = percepcion.get("ImporteExento")
+                importe_gravado_str = percepcion.get(
+                    "ImporteGravado", "0.00").strip()
+                importe_exento_str = percepcion.get(
+                    "ImporteExento", "0.00").strip()
 
                 try:
-                    total_gravado_percepciones += float(
-                        importe_gravado_str) if importe_gravado_str is not None else 0.00
+                    total_gravado_percepciones += float(importe_gravado_str)
                 except (ValueError, TypeError):
                     pass
                 try:
-                    total_exento_percepciones += float(
-                        importe_exento_str) if importe_exento_str is not None else 0.00
+                    total_exento_percepciones += float(importe_exento_str)
                 except (ValueError, TypeError):
                     pass
             data['TotalGravado'] = f"{total_gravado_percepciones:.2f}"
@@ -431,6 +644,7 @@ def parse_xml_invoice(xml_file_path):
 
         else:  # Default to Invoice if no Nomina complement is found
             data['CFDI_Type'] = 'Invoice'
+            # Ensure Nomina specific fields are explicitly None for non-Nomina CFDI
             for _, _, _, col_name in NOMINA_FIELDS_TO_EXTRACT:
                 data[col_name] = None
             data['TotalGravado'] = None

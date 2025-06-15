@@ -1,4 +1,5 @@
-# CFDI Invoice Processing.
+# --- cfdi_processor/main.py ---
+# This file remains unchanged from the previous correct version.
 import platform
 import os
 from xml_parser import parse_xml_invoice
@@ -25,7 +26,7 @@ def create_initial_directories():
     os.makedirs(BOVEDA_XML_DIR, exist_ok=True)
     os.makedirs(REPORTS_DIR, exist_ok=True)
     print(
-        f"Ensured base directories exists: {BASE_APP_DIR}/Boveda_XMLs and {BASE_APP_DIR}/Reports")
+        f"Ensured base directories exist: {BASE_APP_DIR}/Boveda_XMLs and {BASE_APP_DIR}/Reports")
 
 
 def main():
@@ -37,8 +38,8 @@ def main():
     clear_terminal()
 
     print("------ CFDI Invoice Processing Application ------")
-    print("This tool will parse XML electronic invoices from a speffied directory and export the data to an Excel file.")
-    print("It automatically detects if an XML is a regular CFDI or a Nomina Complement")
+    print("This tool will parse XML electronic invoices from a specified directory and export the data to an Excel file.")
+    print("It automatically detects if an XML is a regular CFDI or a Nomina Complement.")
     print("Please ensure your XML files are placed in the designated input directory.")
     print("\nFuture enhancements will include a GUI and automated XML download from SAT using tools like Selenium or Scrapy.")
     print("--------------------------------------------------\n")
@@ -47,14 +48,14 @@ def main():
 
     # User input for the directory containing XML files
     input_folder = input(
-        f"\nEnter the path of the folder containing your XML files (e.g., '{BOVEDA_XML_DIR}/RFC/Emitidas/2025/07)': \n")
+        f"\nEnter the path of the folder containing your XML files (e.g., '{BOVEDA_XML_DIR}/RFC/Emitidas/2025/07'): \n")
 
-    if not os.path.exists(input_folder):
+    if not os.path.isdir(input_folder):
         print(
-            f"Error: The providen path '{input_folder}' is not a valid directory.")
+            f"Error: The provided path '{input_folder}' is not a valid directory.")
         return
 
-    all_passed_data = []
+    all_parsed_data = []
     processed_count = 0
     error_count = 0
 
@@ -66,19 +67,19 @@ def main():
                 print(f" - Processing {file}...")
                 parsed_data = parse_xml_invoice(xml_file_path)
                 if parsed_data:
-                    all_passed_data.append(parsed_data)
+                    all_parsed_data.append(parsed_data)
                     processed_count += 1
                 else:
                     error_count += 1
 
-    if not all_passed_data:
+    if not all_parsed_data:
         print("No valid CFDI XML files were processed. Please check the directory and file formats.")
         return
 
     # Separate data for different sheets.
-    invoice_data = [d for d in all_passed_data if d.get(
+    invoice_data = [d for d in all_parsed_data if d.get(
         "CFDI_Type") == "Invoice"]
-    nomina_data = [d for d in all_passed_data if d.get(
+    nomina_data = [d for d in all_parsed_data if d.get(
         "CFDI_Type") == "Nomina"]
 
     print(
@@ -94,8 +95,7 @@ def main():
 
     # Export to Excel with separate sheets for invoices and nomina data.
     excel_output_path = input(
-        f"\Enter the desired path for the Excel output file (default: {default_excel_output_path}): \n")
-    # Added strip() to handle empty input. Keep in mind if program crasshes again.
+        f"\nEnter the desired path for the Excel output file (default: {default_excel_output_path}): \n")
     if not excel_output_path.strip():
         excel_output_path = default_excel_output_path
 
