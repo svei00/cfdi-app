@@ -1,10 +1,13 @@
 # --- cfdi_processor/main.py ---
-# This file remains unchanged from the previous correct version.
+# This file handles the main application flow, including directory input and calling other modules.
 import platform
 import os
 from xml_parser import parse_xml_invoice
 from excel_exporter import export_to_excel
 from datetime import datetime
+import tkinter as tk  # Import tkinter for GUI file dialog
+# Import filedialog and messagebox for user interaction
+from tkinter import filedialog, messagebox
 
 # Define the base directory where the XMLs will be stored and processed
 # User can change the directory path as needed
@@ -29,6 +32,38 @@ def create_initial_directories():
         f"Ensured base directories exist: {BASE_APP_DIR}/Boveda_XMLs and {BASE_APP_DIR}/Reports")
 
 
+def select_xml_directory_gui(initial_dir=".", title_text="Select XMLs Folder"):
+    """
+    Opens a GUI file dialog for the user to select a directory.
+
+    Args:
+        initial_dir (str): The directory to open the dialog in initially.
+        title_text (str): The title to display on the dialog window.
+
+    Returns:
+        str: The selected directory path, or an empty string if cancelled.
+    """
+    # Create a Tkinter root window but hide it
+    root = tk.Tk()
+    root.withdraw()
+
+    # Show a message box to inform the user about the upcoming file dialog
+    messagebox.showinfo(
+        "Folder Selection",
+        "A folder selection window will now appear. Please select the directory containing your XML files."
+    )
+
+    # Open the directory selection dialog
+    selected_directory = filedialog.askdirectory(
+        initialdir=initial_dir,
+        title=title_text
+    )
+
+    # Destroy the Tkinter root window after selection
+    root.destroy()
+    return selected_directory
+
+
 def main():
     """
     Main function to process the CFDI XML processing application.
@@ -40,15 +75,32 @@ def main():
     print("------ CFDI Invoice Processing Application ------")
     print("This tool will parse XML electronic invoices from a specified directory and export the data to an Excel file.")
     print("It automatically detects if an XML is a regular CFDI or a Nomina Complement.")
-    print("Please ensure your XML files are placed in the designated input directory.")
     print("\nFuture enhancements will include a GUI and automated XML download from SAT using tools like Selenium or Scrapy.")
     print("--------------------------------------------------\n")
 
     create_initial_directories()
 
-    # User input for the directory containing XML files
-    input_folder = input(
-        f"\nEnter the path of the folder containing your XML files (e.g., '{BOVEDA_XML_DIR}/RFC/Emitidas/2025/07'): \n")
+    input_folder = ""
+    # Offer GUI option
+    use_gui = input(
+        "Do you want to use a graphical interface to select the XML folder? (yes/no): ").lower().strip()
+
+    if use_gui == 'yes':
+        input_folder = select_xml_directory_gui(
+            initial_dir=BOVEDA_XML_DIR,
+            title_text="Select CFDI XMLs Folder"
+        )
+        if not input_folder:  # If user closed the GUI dialog
+            print("No folder selected via GUI. Falling back to command-line input.")
+            input_folder = input(
+                f"\nEnter the path of the folder containing your XML files (e.g., '{BOVEDA_XML_DIR}/RFC/Emitidas/2025/07'): \n").strip()
+    else:
+        input_folder = input(
+            f"\nEnter the path of the folder containing your XML files (e.g., '{BOVEDA_XML_DIR}/RFC/Emitidas/2025/07'): \n").strip()
+
+    if not input_folder:
+        print("No input folder provided. Exiting.")
+        return
 
     if not os.path.isdir(input_folder):
         print(
@@ -59,7 +111,7 @@ def main():
     processed_count = 0
     error_count = 0
 
-    print(f"Scanning directory: {input_folder}")
+    print(f"\nScanning directory: {input_folder}")
     for root_dir, _, files in os.walk(input_folder):
         for file in files:
             if file.lower().endswith(".xml"):
@@ -85,7 +137,7 @@ def main():
     print(
         f"\nProcessed {processed_count} XML files. ({error_count} errors encountered.)")
     print(f"Found {len(invoice_data)} CFDI 4.0 Electronic Invoices.")
-    print(f"Found {len(nomina_data)} CFDI 4.0 Nomina complement 1.2.")
+    print(f"Found {len(nomina_data)} CFDI 4.0 Nomina complement 1.2.\n")
 
     # User Input for Excel output export.
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -93,10 +145,9 @@ def main():
     default_excel_output_path = os.path.join(
         REPORTS_DIR, default_excel_filename)
 
-    # Export to Excel with separate sheets for invoices and nomina data.
     excel_output_path = input(
-        f"\nEnter the desired path for the Excel output file (default: {default_excel_output_path}): \n")
-    if not excel_output_path.strip():
+        f"Enter the desired path for the Excel output file (default: {default_excel_output_path}): \n").strip()
+    if not excel_output_path:
         excel_output_path = default_excel_output_path
 
     # Export to Excel with separate sheets.
