@@ -22,8 +22,9 @@ NAMESPACES = {
 }
 
 # Define the full URI for the CFDI namespace for direct attribute access
-CFDI_URI = "http://www.sat.gob.mx/cfd/4"
-TFD_URI = "http://www.sat.gob.mx/TimbreFiscalDigital"
+# Get the URI directly from the NAMESPACES dictionary
+CFDI_URI = NAMESPACES['cfdi']
+TFD_URI = NAMESPACES['tfd']
 
 # --- MAPPING DICTIONARIES ---
 # Standard SAT catalogs for TipoDeComprobante, FormaPago, MetodoPago, UsoCFDI
@@ -78,7 +79,7 @@ USO_CFDI_MAP = {
     "I07": "Comunicaciones satelitales",
     "I08": "Otra maquinaria y equipo",
     "D01": "Honorarios médicos, dentales y gastos hospitalarios",
-    "D02": "Gastos médicos por incapacidad o discapacidad",
+    "D02": "Gastos médicos por incapacidad or disability",
     "D03": "Gastos funerales",
     "D04": "Donativos",
     "D05": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)",
@@ -260,16 +261,37 @@ def extract_tax_details(root, data):
     # Note: Attributes on this element do not use a namespace prefix in the XML data.
     global_impuestos = root.find(".//cfdi:Impuestos", NAMESPACES)
     if global_impuestos is not None:
-        print(f"DEBUG: Found cfdi:Impuestos element.")
-        # CORRECTED: Use the fully qualified attribute name to correctly retrieve from namespaced element
-        total_trasladados_str = global_impuestos.get(
-            f"{{{NAMESPACES['cfdi']}}}TotalImpuestosTrasladados", "0.00").strip()
-        total_retenidos_str = global_impuestos.get(
-            f"{{{NAMESPACES['cfdi']}}}TotalImpuestosRetenidos", "0.00").strip()  # Added for consistency
-        print(f"DEBUG: TotalImpuestosTrasladados raw: '{global_impuestos.get(f'{{{NAMESPACES['cfdi']}}}TotalImpuestosTrasladados')}'")
+        print(f"DEBUG: Found cfdi:Impuestos element: {global_impuestos.tag}")
+
+        # Print all attributes found on this element
+        print("DEBUG: Attributes on global_impuestos element:")
+        for attr_key, attr_value in global_impuestos.attrib.items():
+            print(f"  '{attr_key}': '{attr_value}'")
+
+        # Now, specifically target the Importe from the first cfdi:Traslado child
+        total_trasladados_element = global_impuestos.find(
+            "./cfdi:Traslados/cfdi:Traslado", NAMESPACES)
+        total_retenidos_element = global_impuestos.find(
+            "./cfdi:Retenciones/cfdi:Retencion", NAMESPACES)
+
+        total_trasladados_raw = None
+        if total_trasladados_element is not None:
+            total_trasladados_raw = total_trasladados_element.get("Importe")
+
+        total_retenidos_raw = None
+        if total_retenidos_element is not None:
+            total_retenidos_raw = total_retenidos_element.get("Importe")
+
+        total_trasladados_str = total_trasladados_raw.strip(
+        ) if total_trasladados_raw else "0.00"
+        total_retenidos_str = total_retenidos_raw.strip() if total_retenidos_raw else "0.00"
+
+        print(
+            f"DEBUG: TotalImpuestosTrasladados (from Traslado Importe) raw: '{total_trasladados_raw}'")
         print(
             f"DEBUG: TotalImpuestosTrasladados after strip: '{total_trasladados_str}'")
-        print(f"DEBUG: TotalImpuestosRetenidos raw: '{global_impuestos.get(f'{{{NAMESPACES['cfdi']}}}TotalImpuestosRetenidos')}'")
+        print(
+            f"DEBUG: TotalImpuestosRetenidos (from Retencion Importe) raw: '{total_retenidos_raw}'")
         print(
             f"DEBUG: TotalImpuestosRetenidos after strip: '{total_retenidos_str}'")
 
@@ -690,41 +712,3 @@ def parse_xml_invoice(xml_file_path):
             f"An unexpected error occurred while processing {xml_file_path}: {e}")
         return None
     return data
-
-
-# global_impuestos = root.find(".//cfdi:Impuestos", NAMESPACES)
-#     if global_impuestos is not None:
-#         print(f"DEBUG: Found cfdi:Impuestos element.")
-#         # Corrected: Access attributes without URI prefix as they are not prefixed in XML itself
-#         total_trasladados_str = global_impuestos.get(
-#             "TotalImpuestosTrasladados", "0.00").strip()
-#         total_retenidos_str = global_impuestos.get(
-#             "TotalImpuestosRetenidos", "0.00").strip()
-#         print(
-#             f"DEBUG: TotalImpuestosTrasladados raw: '{global_impuestos.get('TotalImpuestosTrasladados')}'")
-#         print(
-#             f"DEBUG: TotalImpuestosTrasladados after strip: '{total_trasladados_str}'")
-#         print(
-#             f"DEBUG: TotalImpuestosRetenidos raw: '{global_impuestos.get('TotalImpuestosRetenidos')}'")
-#         print(
-#             f"DEBUG: TotalImpuestosRetenidos after strip: '{total_retenidos_str}'")
-
-#         try:
-#             data["Total Trasladados"] = f"{float(total_trasladados_str):.2f}"
-#             print(
-#                 f"DEBUG: Data['Total Trasladados'] set to: {data['Total Trasladados']}")
-#         except (ValueError, TypeError) as e:
-#             data["Total Trasladados"] = "0.00"
-#             print(f"DEBUG: Error converting TotalImpuestosTrasladados: {e}")
-
-#         try:
-#             data["Total Retenidos"] = f"{float(total_retenidos_str):.2f}"
-#             print(
-#                 f"DEBUG: Data['Total Retenidos'] set to: {data['Total Retenidos']}")
-#         except (ValueError, TypeError) as e:
-#             data["Total Retenidos"] = "0.00"
-#             print(f"DEBUG: Error converting TotalImpuestosRetenidos: {e}")
-#     else:
-#         print(f"DEBUG: cfdi:Impuestos element NOT found in XML.")
-#         data["Total Trasladados"] = "0.00"
-#         data["Total Retenidos"] = "0.00"
