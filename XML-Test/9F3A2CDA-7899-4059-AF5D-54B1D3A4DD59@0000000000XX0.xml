@@ -1,0 +1,114 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Certificado="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" Exportacion="01" Fecha="2025-02-08T12:18:23" Folio="00322287" FormaPago="28" LugarExpedicion="44190" MetodoPago="PUE" Moneda="MXN" NoCertificado="00001000000704232210" Sello="GdBpjjbEZvWaYZ3pcXwC2EmpXgsFLfKRB191WRyS9xCOPekZzOAeyO6cv7vjrvlssaaHa3qBXxOeNn4mfWdl8hb+mUcMSz78PZViJ7y9wKToc0MmPlE43roHxNPuZixq143LxMbNqZZQt9+voss8C0mhn08UepKm0/GcYMdKKTaK162rk/45HMtzZofrHugiI4lEZ01Q0NAbIO7MvhaSIN6M5zgyKHeS51ntTnTSBwww9gAUAdfOKoOQZNqyf1fRJqz2X0/dh/BTvFZcLd++il+M95S+rGbyg8mdvuu5gOVS7NkyJfcVWlMuF5n0f2m42OxIBrX+73O1FXdhB8EpZg==" Serie="A" SubTotal="8894.77" TipoCambio="1" TipoDeComprobante="I" Total="10317.92" Version="4.0" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd">
+  <cfdi:Emisor Nombre="DISTRIBUIDORA DE MATERIALES ELECTRICOS DE GUADALAJARA" RegimenFiscal="601" Rfc="DME850320AL1" />
+  <cfdi:Receptor DomicilioFiscalReceptor="44330" Nombre="HUGO EDGAR GONZALEZ OROZCO" RegimenFiscalReceptor="612" Rfc="GOOH841231EPA" UsoCFDI="G03" />
+  <cfdi:Conceptos>
+    <cfdi:Concepto Cantidad="6.000000" ClaveProdServ="39121434" ClaveUnidad="H87" Descripcion="CONECTOR AJUSTE DE 1 1/4" Importe="152.94" NoIdentificacion="10206453" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="25.49">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="152.94" Importe="24.47" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="10.000000" ClaveProdServ="39121434" ClaveUnidad="H87" Descripcion="ABRAZADERA UNICANAL DE 1" Importe="96.20" NoIdentificacion="10206B2003" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="9.62">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="96.20" Importe="15.39" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="2.000000" ClaveProdServ="39131704" ClaveUnidad="H87" Descripcion="CONDULET SERIE 3 LL 33 DE 1" Importe="139.84" NoIdentificacion="10206LL33" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="69.92">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="139.84" Importe="22.37" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="3.000000" ClaveProdServ="39131704" ClaveUnidad="H87" Descripcion="CONDULET SERIE 3 LL 43 DE 1 1/4" Importe="394.35" NoIdentificacion="10206LL43" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="131.45">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="394.35" Importe="63.10" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="3.000000" ClaveProdServ="39121464" ClaveUnidad="H87" Descripcion="CODO DE AJUSTE 1 PULG OMEGA" Importe="149.64" NoIdentificacion="10217CDA25" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="49.88">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="149.64" Importe="23.94" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="3.000000" ClaveProdServ="39121464" ClaveUnidad="H87" Descripcion="CODO DE AJUSTE 1 1/4 PULG OMEGA" Importe="262.65" NoIdentificacion="10217CDA32" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="87.55">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="262.65" Importe="42.02" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="7.000000" ClaveProdServ="39131719" ClaveUnidad="H87" Descripcion="TUBO AJUSTE DE 1 PULG S/COPLE OMEGA" Importe="1273.23" NoIdentificacion="10217TA25" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="181.89">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="1273.23" Importe="203.72" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="5.000000" ClaveProdServ="39131719" ClaveUnidad="H87" Descripcion="TUBO AJUSTE DE 1 1/4 PULG S/COPLE OMEGA" Importe="1075.00" NoIdentificacion="10217TA32" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="215.00">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="1075.00" Importe="172.00" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="2.000000" ClaveProdServ="40172902" ClaveUnidad="H87" Descripcion="COPLE CON ROSCA DE 1 1/4 PULG OMEGA" Importe="69.74" NoIdentificacion="10217UR32" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="34.87">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="69.74" Importe="11.16" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="2.000000" ClaveProdServ="32131023" ClaveUnidad="H87" Descripcion="BASE WALTTHORIMETRO MONO 100A 4 TERMINALES 127V 202537" Importe="248.02" NoIdentificacion="10231BW4T" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="124.01">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="248.02" Importe="39.68" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="1.000000" ClaveProdServ="26121600" ClaveUnidad="XBX" Descripcion="CABLE THW CAL 8 BLANCO INDIANA SLY297" Importe="2423.52" NoIdentificacion="10243CTHW8CAJAB" ObjetoImp="02" Unidad="CAJA" ValorUnitario="2423.52">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="2423.52" Importe="387.76" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="1.000000" ClaveProdServ="26121600" ClaveUnidad="XBX" Descripcion="CABLE THW CAL 8 ROJO INDIANA SLY300" Importe="2423.52" NoIdentificacion="10243CTHW8CAJAR" ObjetoImp="02" Unidad="CAJA" ValorUnitario="2423.52">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="2423.52" Importe="387.76" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="1.000000" ClaveProdServ="39131700" ClaveUnidad="H87" Descripcion="UNICANAL DE 3 MTS 4X2 SENCILLO CAL 16" Importe="136.32" NoIdentificacion="10261CHB5416" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="136.32">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="136.32" Importe="21.81" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto Cantidad="2.000000" ClaveProdServ="39121600" ClaveUnidad="H87" Descripcion="MUFA CON ROSCA 1 1/4" Importe="49.80" NoIdentificacion="10303MR114" ObjetoImp="02" Unidad="PIEZA" ValorUnitario="24.90">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="49.80" Importe="7.97" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+  </cfdi:Conceptos>
+  <cfdi:Impuestos TotalImpuestosTrasladados="1423.15">
+    <cfdi:Traslados>
+      <cfdi:Traslado Base="8894.77" Importe="1423.15" Impuesto="002" TasaOCuota="0.160000" TipoFactor="Tasa" />
+    </cfdi:Traslados>
+  </cfdi:Impuestos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" FechaTimbrado="2025-02-08T13:37:52" NoCertificadoSAT="00001000000516053874" RfcProvCertif="FCG840618N51" SelloCFD="GdBpjjbEZvWaYZ3pcXwC2EmpXgsFLfKRB191WRyS9xCOPekZzOAeyO6cv7vjrvlssaaHa3qBXxOeNn4mfWdl8hb+mUcMSz78PZViJ7y9wKToc0MmPlE43roHxNPuZixq143LxMbNqZZQt9+voss8C0mhn08UepKm0/GcYMdKKTaK162rk/45HMtzZofrHugiI4lEZ01Q0NAbIO7MvhaSIN6M5zgyKHeS51ntTnTSBwww9gAUAdfOKoOQZNqyf1fRJqz2X0/dh/BTvFZcLd++il+M95S+rGbyg8mdvuu5gOVS7NkyJfcVWlMuF5n0f2m42OxIBrX+73O1FXdhB8EpZg==" SelloSAT="XU6yspES8aSKudZAZJnZZkI+qvo3EEDbF6PU7MgSuwBfLuJ9a862bmjMmpZRLR9aJG6qN3qKXeXIlYrOa41rZ7R7BFbc3NSXA7ICSVADLiEvFhvg1i+v+XHjZjWPHuuYqCyibcyCIeqwR39ZtP9D91RwWkveNSIAt5MgRD1VO4XzSns58xJ7hmlxw83AWwc+KnmvHdX8X36GasGs1Fk8f5oumIN/dLl8D9nRlkK7AxVNFRukuTnDfDniPJ/0GXIj1Qs18QL1Lfx4CQGAbHol+uLtHHGwOxRNTQaJGvp9kNGodXDnc9j5cq3JFGXD9GuPUKYLugRMb7BQrBQrwTF3Kg==" UUID="9F3A2CDA-7899-4059-AF5D-54B1D3A4DD59" Version="1.1" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd" />
+  </cfdi:Complemento>
+</cfdi:Comprobante>
+

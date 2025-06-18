@@ -146,8 +146,8 @@ INVOICE_COLUMN_ORDER = [
     "Retenido ISR",
     "ISH",
     "Total",
-    "Total Trasladados",
-    "Total Retenidos",
+    "Total Trasladados",  # Re-added for explicit extraction
+    "Total Retenidos",   # Re-added for explicit extraction
     "Total LocalTrasladado",
     "Total LocalRetenido",
     "Complemento",
@@ -184,7 +184,7 @@ INVOICE_COLUMN_ORDER = [
 ]
 
 # List of XML tags/attributes to extract for CFDI elements not directly on the Comprobante root.
-# Note: UsoCFDI, RegimenFiscalReceptor are handled explicitly in parse_xml_invoice with mapping
+# Note: These attributes do not carry a namespace prefix in the XML, even if their parent element does.
 CFDI_CHILD_ELEMENTS_TO_EXTRACT = [
     # CFDI Relacionados
     (".//cfdi:CfdiRelacionados", "TipoRelacion", "", "TipoDeRelacion"),
@@ -198,14 +198,11 @@ CFDI_CHILD_ELEMENTS_TO_EXTRACT = [
     # Receptor
     (".//cfdi:Receptor", "Rfc", "", "RFC Receptor"),
     (".//cfdi:Receptor", "Nombre", "", "Nombre Receptor"),
-    # UsoCFDI and RegimenFiscalReceptor are handled directly in parse_xml_invoice with mapping
     (".//cfdi:Receptor", "ResidenciaFiscal", "", "ResidenciaFiscal"),
     (".//cfdi:Receptor", "NumRegIdTrib", "", "NumRegIdTrib"),
+    # UsoCFDI and RegimenFiscalReceptor are handled directly in parse_xml_invoice with mapping
     (".//cfdi:Receptor", "DomicilioFiscalReceptor",
      "", "DomicilioFiscalReceptor"),  # Postal Code
-
-    # Timbre Fiscal Digital (UUID and FechaTimbrado are handled explicitly for formatting)
-    # UUID is handled explicitly in parse_xml_invoice
 ]
 
 # List of XML tags/attributes to extract for Nomina complement 1.2 XML.
@@ -259,35 +256,50 @@ def extract_tax_details(root, data):
         data[field] = "0.00"
 
     # --- Process Global Tax Totals (Total Trasladados, Total Retenidos) ---
-    # These should come directly from the main <cfdi:Impuestos> element if present
+    # These should come directly from the main <cfdi:Impuestos> element if present.
+    # Note: Attributes on this element do not use a namespace prefix in the XML data.
     global_impuestos = root.find(".//cfdi:Impuestos", NAMESPACES)
     if global_impuestos is not None:
-        # Access attributes without URI prefix as they are not prefixed in XML itself
+        print(f"DEBUG: Found cfdi:Impuestos element.")
+        # CORRECTED: Use the fully qualified attribute name to correctly retrieve from namespaced element
         total_trasladados_str = global_impuestos.get(
-            "TotalImpuestosTrasladados", "0.00").strip()
+            f"{{{NAMESPACES['cfdi']}}}TotalImpuestosTrasladados", "0.00").strip()
         total_retenidos_str = global_impuestos.get(
-            "TotalImpuestosRetenidos", "0.00").strip()
+            f"{{{NAMESPACES['cfdi']}}}TotalImpuestosRetenidos", "0.00").strip()  # Added for consistency
+        print(f"DEBUG: TotalImpuestosTrasladados raw: '{global_impuestos.get(f'{{{NAMESPACES['cfdi']}}}TotalImpuestosTrasladados')}'")
+        print(
+            f"DEBUG: TotalImpuestosTrasladados after strip: '{total_trasladados_str}'")
+        print(f"DEBUG: TotalImpuestosRetenidos raw: '{global_impuestos.get(f'{{{NAMESPACES['cfdi']}}}TotalImpuestosRetenidos')}'")
+        print(
+            f"DEBUG: TotalImpuestosRetenidos after strip: '{total_retenidos_str}'")
 
         try:
             data["Total Trasladados"] = f"{float(total_trasladados_str):.2f}"
-        except (ValueError, TypeError):
+            print(
+                f"DEBUG: Data['Total Trasladados'] set to: {data['Total Trasladados']}")
+        except (ValueError, TypeError) as e:
             data["Total Trasladados"] = "0.00"
+            print(f"DEBUG: Error converting TotalImpuestosTrasladados: {e}")
 
         try:
             data["Total Retenidos"] = f"{float(total_retenidos_str):.2f}"
-        except (ValueError, TypeError):
+            print(
+                f"DEBUG: Data['Total Retenidos'] set to: {data['Total Retenidos']}")
+        except (ValueError, TypeError) as e:
             data["Total Retenidos"] = "0.00"
+            print(f"DEBUG: Error converting TotalImpuestosRetenidos: {e}")
     else:
+        print(f"DEBUG: cfdi:Impuestos element NOT found in XML.")
         data["Total Trasladados"] = "0.00"
         data["Total Retenidos"] = "0.00"
 
     # --- Process Specific Traslados (IVA, IEPS) from Conceptos ONLY ---
     # This avoids double-counting if global Impuestos sums up concepts implicitly.
     for concepto_traslado in root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", NAMESPACES):
-        impuesto_code = concepto_traslado.get("Impuesto", "")
-        tipo_factor = concepto_traslado.get("TipoFactor", "")
-        tasa_ocuota = concepto_traslado.get("TasaOCuota", "")
-        importe_str = concepto_traslado.get("Importe", "0.00")
+        impuesto_code = concepto_traslado.get("Impuesto", "").strip()
+        tipo_factor = concepto_traslado.get("TipoFactor", "").strip()
+        tasa_ocuota = concepto_traslado.get("TasaOCuota", "").strip()
+        importe_str = concepto_traslado.get("Importe", "0.00").strip()
 
         try:
             importe = float(importe_str)
@@ -324,8 +336,8 @@ def extract_tax_details(root, data):
 
     # --- Process Specific Retenciones (ISR, IVA) from Conceptos ONLY ---
     for concepto_retencion in root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Retenciones/cfdi:Retencion", NAMESPACES):
-        impuesto_code = concepto_retencion.get("Impuesto", "")
-        importe_str = concepto_retencion.get("Importe", "0.00")
+        impuesto_code = concepto_retencion.get("Impuesto", "").strip()
+        importe_str = concepto_retencion.get("Importe", "0.00").strip()
 
         try:
             importe = float(importe_str)
@@ -336,23 +348,23 @@ def extract_tax_details(root, data):
             data["Retenido ISR"] = f"{float(data.get('Retenido ISR', '0.00')) + importe:.2f}"
         elif impuesto_code == "002":  # IVA
             data["Retenido IVA"] = f"{float(data.get('Retenido IVA', '0.00')) + importe:.2f}"
-            tasa_ocuota_ret = concepto_retencion.get("TasaOCuota", "")
+            tasa_ocuota_ret = concepto_retencion.get("TasaOCuota", "").strip()
             if tasa_ocuota_ret == "0.060000":
                 data["IVA Ret 6%"] = f"{float(data.get('IVA Ret 6%', '0.00')) + importe:.2f}"
 
     # --- Process Local Taxes (ISH, Total LocalTrasladado, Total LocalRetenido) ---
     total_local_trasladado_sum = 0.0
     for traslado_local in root.findall(".//implocal:ImpuestosLocales/implocal:TrasladosLocales", NAMESPACES):
-        imp_local_trasladado = traslado_local.get("ImpLocTrasladado", "")
-        tasa_de_traslado = traslado_local.get("TasadeTraslado", "")
-        importe_str = traslado_local.get("Importe", "0.00")
+        imp_loc_trasladado = traslado_local.get("ImpLocTrasladado", "").strip()
+        tasa_de_traslado = traslado_local.get("TasadeTraslado", "").strip()
+        importe_str = traslado_local.get("Importe", "0.00").strip()
 
         try:
             importe = float(importe_str)
         except (ValueError, TypeError):
             importe = 0.00
 
-        if imp_local_trasladado == "ISH":
+        if imp_loc_trasladado == "ISH":
             data["ISH"] = f"{float(data.get('ISH', '0.00')) + importe:.2f}"
         total_local_trasladado_sum += importe
 
@@ -361,8 +373,8 @@ def extract_tax_details(root, data):
     total_local_retenido_sum = 0.0
     for retencion_local in root.findall(".//implocal:ImpuestosLocales/implocal:RetencionesLocales", NAMESPACES):
         # Make sure to get the correct attribute name
-        imp_local_retenido = retencion_local.get("ImpLocRetenido", "")
-        importe_str = retencion_local.get("Importe", "0.00")
+        imp_local_retenido = retencion_local.get("ImpLocRetenido", "").strip()
+        importe_str = retencion_local.get("Importe", "0.00").strip()
 
         try:
             importe = float(importe_str)
@@ -381,10 +393,11 @@ def extract_iedu_data(root, data):
         ".//cfdi:ComplementoConcepto/iedu:instEducativas", NAMESPACES)
     if iedu_complement is not None:
         data["CURP Dependiente"] = iedu_complement.get(
-            "CURP", "")  # Changed to Dependiente
-        data["Nivel Educativo"] = iedu_complement.get("nivelEducativo", "")
+            "CURP", "").strip()  # Changed to Dependiente
+        data["Nivel Educativo"] = iedu_complement.get(
+            "nivelEducativo", "").strip()
         data["Nombre Dependiente"] = iedu_complement.get(
-            "nombreAlumno", "")  # Changed to Dependiente
+            "nombreAlumno", "").strip()  # Changed to Dependiente
 
 
 def parse_xml_invoice(xml_file_path):
@@ -415,7 +428,7 @@ def parse_xml_invoice(xml_file_path):
 
         # --- Explicitly Extract Root-Level CFDI Comprobante Attributes ---
         # These attributes are on the namespaced <cfdi:Comprobante> element,
-        # but the attributes themselves are NOT namespaced in the XML.
+        # but the attributes themselves are NOT namespaced in the XML (e.g., Version="4.0" not cfdi:Version="4.0").
         # Therefore, use plain .get() without the URI prefix.
         data["Version"] = root.get("Version", "4.0").strip()
         # Use .get() without URI prefix as TipoDeComprobante is not namespaced in XML
@@ -472,7 +485,7 @@ def parse_xml_invoice(xml_file_path):
         data["Exportacion"] = root.get("Exportacion", "").strip()
 
         # --- Extract Timbre Fiscal Digital Attributes ---
-        # Attributes on tfd:TimbreFiscalDigital are also NOT namespaced.
+        # Attributes on tfd:TimbreFiscalDigital are also NOT namespaced (e.g., UUID="...", not tfd:UUID="...").
         timbre_fiscal_digital = root.find(
             ".//tfd:TimbreFiscalDigital", NAMESPACES)
         if timbre_fiscal_digital is not None:
@@ -495,8 +508,9 @@ def parse_xml_invoice(xml_file_path):
             element = root.find(xpath, NAMESPACES)
             if element is not None:
                 if attr_name:
+                    # Access attribute without URI prefix as it is not namespaced in XML
                     value = element.get(attr_name, default_val).strip() if element.get(
-                        attr_name) is not None else default_val  # Added strip()
+                        attr_name) is not None else default_val
                 else:
                     value = element.text.strip() if element.text is not None else default_val
             else:
@@ -547,9 +561,10 @@ def parse_xml_invoice(xml_file_path):
         # Handle implocal:TrasladosLocales (multiple nodes) - details for debugging, not direct output column
         traslados_locales_details = []
         for traslado_local in root.findall(".//implocal:ImpuestosLocales/implocal:TrasladosLocales", NAMESPACES):
-            imp_loc_trasladado = traslado_local.get("ImpLocTrasladado", "")
-            tasa_de_traslado = traslado_local.get("TasadeTraslado", "")
-            importe = traslado_local.get("Importe", "0.00")
+            imp_loc_trasladado = traslado_local.get(
+                "ImpLocTrasladado", "").strip()
+            tasa_de_traslado = traslado_local.get("TasadeTraslado", "").strip()
+            importe = traslado_local.get("Importe", "0.00").strip()
             traslados_locales_details.append(
                 f"{imp_loc_trasladado}|{tasa_de_traslado}|{importe}")
         data["ImpLocal_TrasladosLocales_Details"] = ' | '.join(
@@ -675,3 +690,41 @@ def parse_xml_invoice(xml_file_path):
             f"An unexpected error occurred while processing {xml_file_path}: {e}")
         return None
     return data
+
+
+# global_impuestos = root.find(".//cfdi:Impuestos", NAMESPACES)
+#     if global_impuestos is not None:
+#         print(f"DEBUG: Found cfdi:Impuestos element.")
+#         # Corrected: Access attributes without URI prefix as they are not prefixed in XML itself
+#         total_trasladados_str = global_impuestos.get(
+#             "TotalImpuestosTrasladados", "0.00").strip()
+#         total_retenidos_str = global_impuestos.get(
+#             "TotalImpuestosRetenidos", "0.00").strip()
+#         print(
+#             f"DEBUG: TotalImpuestosTrasladados raw: '{global_impuestos.get('TotalImpuestosTrasladados')}'")
+#         print(
+#             f"DEBUG: TotalImpuestosTrasladados after strip: '{total_trasladados_str}'")
+#         print(
+#             f"DEBUG: TotalImpuestosRetenidos raw: '{global_impuestos.get('TotalImpuestosRetenidos')}'")
+#         print(
+#             f"DEBUG: TotalImpuestosRetenidos after strip: '{total_retenidos_str}'")
+
+#         try:
+#             data["Total Trasladados"] = f"{float(total_trasladados_str):.2f}"
+#             print(
+#                 f"DEBUG: Data['Total Trasladados'] set to: {data['Total Trasladados']}")
+#         except (ValueError, TypeError) as e:
+#             data["Total Trasladados"] = "0.00"
+#             print(f"DEBUG: Error converting TotalImpuestosTrasladados: {e}")
+
+#         try:
+#             data["Total Retenidos"] = f"{float(total_retenidos_str):.2f}"
+#             print(
+#                 f"DEBUG: Data['Total Retenidos'] set to: {data['Total Retenidos']}")
+#         except (ValueError, TypeError) as e:
+#             data["Total Retenidos"] = "0.00"
+#             print(f"DEBUG: Error converting TotalImpuestosRetenidos: {e}")
+#     else:
+#         print(f"DEBUG: cfdi:Impuestos element NOT found in XML.")
+#         data["Total Trasladados"] = "0.00"
+#         data["Total Retenidos"] = "0.00"
