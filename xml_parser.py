@@ -261,14 +261,15 @@ def extract_tax_details(root, data):
     # Note: Attributes on this element do not use a namespace prefix in the XML data.
     global_impuestos = root.find(".//cfdi:Impuestos", NAMESPACES)
     if global_impuestos is not None:
-        print(f"DEBUG: Found cfdi:Impuestos element: {global_impuestos.tag}")
+        # print(f"DEBUG: Found cfdi:Impuestos element: {global_impuestos.tag}")
 
-        # Print all attributes found on this element
-        print("DEBUG: Attributes on global_impuestos element:")
-        for attr_key, attr_value in global_impuestos.attrib.items():
-            print(f"  '{attr_key}': '{attr_value}'")
+        # # Print all attributes found on this element
+        # print("DEBUG: Attributes on global_impuestos element:")
+        # for attr_key, attr_value in global_impuestos.attrib.items():
+        #     print(f"  '{attr_key}': '{attr_value}'")
 
         # Now, specifically target the Importe from the first cfdi:Traslado child
+        # This is the reliable way to get the total in your specific XML structure.
         total_trasladados_element = global_impuestos.find(
             "./cfdi:Traslados/cfdi:Traslado", NAMESPACES)
         total_retenidos_element = global_impuestos.find(
@@ -286,32 +287,26 @@ def extract_tax_details(root, data):
         ) if total_trasladados_raw else "0.00"
         total_retenidos_str = total_retenidos_raw.strip() if total_retenidos_raw else "0.00"
 
-        print(
-            f"DEBUG: TotalImpuestosTrasladados (from Traslado Importe) raw: '{total_trasladados_raw}'")
-        print(
-            f"DEBUG: TotalImpuestosTrasladados after strip: '{total_trasladados_str}'")
-        print(
-            f"DEBUG: TotalImpuestosRetenidos (from Retencion Importe) raw: '{total_retenidos_raw}'")
-        print(
-            f"DEBUG: TotalImpuestosRetenidos after strip: '{total_retenidos_str}'")
+        # print(f"DEBUG: TotalImpuestosTrasladados (from Traslado Importe) raw: '{total_trasladados_raw}'")
+        # print(f"DEBUG: TotalImpuestosTrasladados after strip: '{total_trasladados_str}'")
+        # print(f"DEBUG: TotalImpuestosRetenidos (from Retencion Importe) raw: '{total_retenidos_raw}'")
+        # print(f"DEBUG: TotalImpuestosRetenidos after strip: '{total_retenidos_str}'")
 
         try:
             data["Total Trasladados"] = f"{float(total_trasladados_str):.2f}"
-            print(
-                f"DEBUG: Data['Total Trasladados'] set to: {data['Total Trasladados']}")
+            # print(f"DEBUG: Data['Total Trasladados'] set to: {data['Total Trasladados']}")
         except (ValueError, TypeError) as e:
             data["Total Trasladados"] = "0.00"
-            print(f"DEBUG: Error converting TotalImpuestosTrasladados: {e}")
+            # print(f"DEBUG: Error converting TotalImpuestosTrasladados: {e}")
 
         try:
             data["Total Retenidos"] = f"{float(total_retenidos_str):.2f}"
-            print(
-                f"DEBUG: Data['Total Retenidos'] set to: {data['Total Retenidos']}")
+            # print(f"DEBUG: Data['Total Retenidos'] set to: {data['Total Retenidos']}")
         except (ValueError, TypeError) as e:
             data["Total Retenidos"] = "0.00"
-            print(f"DEBUG: Error converting TotalImpuestosRetenidos: {e}")
+            # print(f"DEBUG: Error converting TotalImpuestosRetenidos: {e}")
     else:
-        print(f"DEBUG: cfdi:Impuestos element NOT found in XML.")
+        # print(f"DEBUG: cfdi:Impuestos element NOT found in XML.")
         data["Total Trasladados"] = "0.00"
         data["Total Retenidos"] = "0.00"
 
@@ -410,16 +405,17 @@ def extract_tax_details(root, data):
 def extract_iedu_data(root, data):
     """
     Extracts Specific Data from IEDU Complement
+    This function expects the root of the XML (cfdi:Comprobante) and navigates from there.
     """
+    # Corrected XPath to find iedu:instEducativas nested under cfdi:Concepto/cfdi:ComplementoConcepto
     iedu_complement = root.find(
-        ".//cfdi:ComplementoConcepto/iedu:instEducativas", NAMESPACES)
+        ".//cfdi:Concepto/cfdi:ComplementoConcepto/iedu:instEducativas", NAMESPACES)
     if iedu_complement is not None:
-        data["CURP Dependiente"] = iedu_complement.get(
-            "CURP", "").strip()  # Changed to Dependiente
+        data["CURP Dependiente"] = iedu_complement.get("CURP", "").strip()
         data["Nivel Educativo"] = iedu_complement.get(
             "nivelEducativo", "").strip()
         data["Nombre Dependiente"] = iedu_complement.get(
-            "nombreAlumno", "").strip()  # Changed to Dependiente
+            "nombreAlumno", "").strip()
 
 
 def parse_xml_invoice(xml_file_path):
@@ -690,8 +686,10 @@ def parse_xml_invoice(xml_file_path):
             data['TotalOtrosPagos'] = None
 
         # Detect other complements and add to the "Complemento" field.
-        if root.find('.//cfdi:Complemento/iedu:instEducativas', NAMESPACES) is not None:
+        # This part is updated to correctly find IEDU under Concepto/ComplementoConcepto
+        if root.find('.//cfdi:Concepto/cfdi:ComplementoConcepto/iedu:instEducativas', NAMESPACES) is not None:
             detected_complements.append('IEDU')
+            # Call extract_iedu_data which now uses the correct XPath
             extract_iedu_data(root, data)
 
         if root.find('.//cfdi:Complemento/implocal:ImpuestosLocales', NAMESPACES) is not None:
