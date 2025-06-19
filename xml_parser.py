@@ -244,8 +244,8 @@ NOMINA_FIELDS_TO_EXTRACT = [
 def extract_tax_details(root, data):
     """
     Extracts and aggregates various tax details (IVA, IEPS, Retenidos, Local Taxes) from XML.
-    Prioritizes global totals for 'Total Trasladados' and 'Total Retenidos',
-    and sums specific taxes from concepts to avoid double counting.
+    Correctly extracts TotalImpuestosTrasladados and TotalImpuestosRetenidos
+    from the global cfdi:Impuestos element's attributes.
     """
     # Initialize all specific tax fields to "0.00"
     tax_fields = [
@@ -256,62 +256,32 @@ def extract_tax_details(root, data):
     for field in tax_fields:
         data[field] = "0.00"
 
-    # --- Process Global Tax Totals (Total Trasladados, Total Retenidos) ---
-    # These should come directly from the main <cfdi:Impuestos> element if present.
-    # Note: Attributes on this element do not use a namespace prefix in the XML data.
-    global_impuestos = root.find(".//cfdi:Impuestos", NAMESPACES)
-    if global_impuestos is not None:
-        # print(f"DEBUG: Found cfdi:Impuestos element: {global_impuestos.tag}")
+    # --- Extract TotalImpuestosTrasladados and TotalImpuestosRetenidos from global cfdi:Impuestos attributes ---
+    global_impuestos_element = root.find("./cfdi:Impuestos", NAMESPACES)
 
-        # # Print all attributes found on this element
-        # print("DEBUG: Attributes on global_impuestos element:")
-        # for attr_key, attr_value in global_impuestos.attrib.items():
-        #     print(f"  '{attr_key}': '{attr_value}'")
-
-        # Now, specifically target the Importe from the first cfdi:Traslado child
-        # This is the reliable way to get the total in your specific XML structure.
-        total_trasladados_element = global_impuestos.find(
-            "./cfdi:Traslados/cfdi:Traslado", NAMESPACES)
-        total_retenidos_element = global_impuestos.find(
-            "./cfdi:Retenciones/cfdi:Retencion", NAMESPACES)
-
-        total_trasladados_raw = None
-        if total_trasladados_element is not None:
-            total_trasladados_raw = total_trasladados_element.get("Importe")
-
-        total_retenidos_raw = None
-        if total_retenidos_element is not None:
-            total_retenidos_raw = total_retenidos_element.get("Importe")
-
-        total_trasladados_str = total_trasladados_raw.strip(
-        ) if total_trasladados_raw else "0.00"
-        total_retenidos_str = total_retenidos_raw.strip() if total_retenidos_raw else "0.00"
-
-        # print(f"DEBUG: TotalImpuestosTrasladados (from Traslado Importe) raw: '{total_trasladados_raw}'")
-        # print(f"DEBUG: TotalImpuestosTrasladados after strip: '{total_trasladados_str}'")
-        # print(f"DEBUG: TotalImpuestosRetenidos (from Retencion Importe) raw: '{total_retenidos_raw}'")
-        # print(f"DEBUG: TotalImpuestosRetenidos after strip: '{total_retenidos_str}'")
+    if global_impuestos_element is not None:
+        # Directly get the attributes from the global cfdi:Impuestos element
+        total_trasladados_str = global_impuestos_element.get(
+            "TotalImpuestosTrasladados", "0.00").strip()
+        total_retenidos_str = global_impuestos_element.get(
+            "TotalImpuestosRetenidos", "0.00").strip()
 
         try:
             data["Total Trasladados"] = f"{float(total_trasladados_str):.2f}"
-            # print(f"DEBUG: Data['Total Trasladados'] set to: {data['Total Trasladados']}")
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError):
             data["Total Trasladados"] = "0.00"
-            # print(f"DEBUG: Error converting TotalImpuestosTrasladados: {e}")
 
         try:
             data["Total Retenidos"] = f"{float(total_retenidos_str):.2f}"
-            # print(f"DEBUG: Data['Total Retenidos'] set to: {data['Total Retenidos']}")
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError):
             data["Total Retenidos"] = "0.00"
-            # print(f"DEBUG: Error converting TotalImpuestosRetenidos: {e}")
     else:
-        # print(f"DEBUG: cfdi:Impuestos element NOT found in XML.")
+        # If no global cfdi:Impuestos element, these totals are zero
         data["Total Trasladados"] = "0.00"
         data["Total Retenidos"] = "0.00"
 
     # --- Process Specific Traslados (IVA, IEPS) from Conceptos ONLY ---
-    # This avoids double-counting if global Impuestos sums up concepts implicitly.
+    # This section sums up the individual tax amounts per concept.
     for concepto_traslado in root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", NAMESPACES):
         impuesto_code = concepto_traslado.get("Impuesto", "").strip()
         tipo_factor = concepto_traslado.get("TipoFactor", "").strip()
@@ -592,7 +562,15 @@ def parse_xml_invoice(xml_file_path):
         # These are directly on the Comprobante element, so use plain .get()
         serie = root.get("Serie", '').strip()
         folio = root.get("Folio", '').strip()
-        data['Factura'] = f"{serie}-{folio}".strip() if serie or folio else None
+
+        # --- FIX for Factura field formatting (Serie-Folio vs Folio) ---
+        if serie and folio:
+            data['Factura'] = f"{serie}-{folio}"
+        elif folio:  # Only folio exists
+            data['Factura'] = folio
+        else:  # Both are empty
+            data['Factura'] = None
+        # --- END FIX ---
 
         # Placeholders for fields requiring external logic or not directly in the XML
         data["Verificado ó Asoc."] = ""

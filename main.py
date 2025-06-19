@@ -127,9 +127,9 @@ def determine_file_naming_components(parsed_data_list):
         # Extract date for month/year (prioritize Fecha Timbrado if available, else Fecha Emision)
         # Dates are parsed in xml_parser to "DD/MM/YYYY HH:MM:SS" for Fecha Timbrado
         # and "DD/MM/YYYY" for Fecha Emision. Need to handle both for robustness here.
-        date_str = data.get("Fecha Timbrado")  # Preferred for date part
+        date_str = data.get("Fecha Emision")  # Preferred for date part
         if not date_str:
-            date_str = data.get("Fecha Emision")  # Fallback
+            date_str = data.get("Fecha Timbrado")  # Fallback
 
         if date_str:
             try:
@@ -223,7 +223,7 @@ def determine_file_naming_components(parsed_data_list):
         max_year, max_month = sorted_dates[-1]
 
         # If multiple dates, express as a range (e.g., 202401-202403)
-        year_month_part = f"MixedDates_{min_year}{min_month:02d}-{max_year}{max_month:02d}"
+        year_month_part = f"MixedDates_{min_year}_{min_month:02d}-{max_year}_{max_month:02d}"
 
     return rfc_part, type_of_xml_part, year_month_part
 
