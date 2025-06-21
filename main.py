@@ -124,7 +124,7 @@ def determine_file_naming_components(parsed_data_list):
         if receptor_rfc:
             all_rfcs_receptor.add(receptor_rfc)
 
-        # Extract date for month/year (prioritize Fecha Timbrado if available, else Fecha Emision)
+        # Extract date for month/year (prioritize Fecha Emision if available, else Fecha Timbrado)
         # Dates are parsed in xml_parser to "DD/MM/YYYY HH:MM:SS" for Fecha Timbrado
         # and "DD/MM/YYYY" for Fecha Emision. Need to handle both for robustness here.
         date_str = data.get("Fecha Emision")  # Preferred for date part
@@ -169,15 +169,15 @@ def determine_file_naming_components(parsed_data_list):
 
         # Also check if any Nomina document exists where the dominant_emisor_rfc is the emisor.
         # If so, it should be Emitidas.
-        has_nomina_for_dominant_emisor = any(
-            data.get("CFDI_Type") == "Nomina" and data.get(
-                "RFC Emisor") == dominant_emisor_rfc
-            for data in parsed_data_list
-        )
+        # has_nomina_for_dominant_emisor = any(
+        #     data.get("CFDI_Type") == "Nomina" and data.get(
+        #         "RFC Emisor") == dominant_emisor_rfc
+        #     for data in parsed_data_list
+        # )
 
-        if is_truly_emitidas or has_nomina_for_dominant_emisor:
-            rfc_part = dominant_emisor_rfc
-            type_of_xml_part = "Emitidas"
+        # if is_truly_emitidas or has_nomina_for_dominant_emisor:
+        #     rfc_part = dominant_emisor_rfc
+        #     type_of_xml_part = "Emitidas"
 
     # Scenario 2: All documents are received by a single, consistent RFC.
     # This means: all RFCs in 'all_rfcs_receptor' are the same, and any RFCs in 'all_rfcs_emisor' are NOT this dominant RFC.
