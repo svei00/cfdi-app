@@ -30,7 +30,7 @@ TFD_URI = NAMESPACES['tfd']
 # Standard SAT catalogs for TipoDeComprobante, FormaPago, MetodoPago, UsoCFDI
 TIPO_COMPROBANTE_MAP = {
     "I": "Factura",  # Ingreso
-    "E": "Egreso",  # Egreso (Nota de crédito)
+    "E": "NotaCredito",  # Egreso (Nota de crédito)
     "T": "Traslado",  # Traslado
     "P": "Pago",    # Recepción de pagos
     "N": "Nómina"   # Nómina (though handled by CFDI_Type in this app)
@@ -88,7 +88,9 @@ USO_CFDI_MAP = {
     "D08": "Gastos de transportación escolar obligatoria",
     "D09": "Depósitos en cuentas para el ahorro, primas que tengan como base planes de pensiones",
     "D10": "Pagos por servicios educativos (colegiaturas)",
-    "P01": "Por definir"
+    "S01": "Sin efectos fiscales",
+    "CP01": "Pagos",
+    "CN01": "Nómina",
 }
 
 REGIMEN_FISCAL_RECEPTOR_MAP = {
