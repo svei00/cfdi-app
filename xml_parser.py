@@ -43,21 +43,21 @@ FORMA_PAGO_MAP = {
     "04": "Tarjeta de crédito",
     "05": "Monedero electrónico",
     "06": "Dinero electrónico",
-    "08": "Tarjeta de débito",
+    "08": "Vales de despensa",
     "12": "Dación en pago",
     "13": "Pago por subrogación",
     "14": "Pago por consignación",
-    "15": "Condenación o remisión de deuda",
+    "15": "Condonación",
     "17": "Compensación",
     "23": "Novación",
     "24": "Confusión",
-    "25": "Condonación",
-    "26": "Remisión de deuda",
-    "27": "Prescripción o caducidad",
-    "28": "Tarjeta de servicios",
-    "29": "Aplicación de anticipos",
-    "30": "Documento bancario",
-    "31": "Intermediario de pagos",
+    "25": "Remisión de deuda",
+    "26": "Prescripción o caducidad",
+    "27": "A satisfacción del acreedor",
+    "28": "Tarjeta de débito",
+    "29": "Tarjeta de servicios",
+    "30": "Aplicación de anticipos",
+    "31": "Intermediario pagos",
     "99": "Por definir"
 }
 
@@ -79,7 +79,7 @@ USO_CFDI_MAP = {
     "I07": "Comunicaciones satelitales",
     "I08": "Otra maquinaria y equipo",
     "D01": "Honorarios médicos, dentales y gastos hospitalarios",
-    "D02": "Gastos médicos por incapacidad or disability",
+    "D02": "Gastos médicos por incapacidad o discapacidad",
     "D03": "Gastos funerales",
     "D04": "Donativos",
     "D05": "Intereses reales efectivamente pagados por créditos hipotecarios (casa habitación)",
@@ -100,18 +100,20 @@ REGIMEN_FISCAL_RECEPTOR_MAP = {
     "606": "Arrendamiento",
     "607": "Régimen de Enajenación o Adquisición de Bienes",
     "608": "Demas ingresos",
-    "609": "Consolidación",
+    # "609": "Consolidación",
     "610": "Residentes en el Extranjero sin Establecimiento Permanente en México",
     "611": "Ingresos por Dividendos (socios y accionistas)",
     "612": "Personas Físicas con Actividades Empresariales y Profesionales",
     "614": "Ingresos por Intereses",
-    "615": "Régimen de los Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras",
+    "615": "Régimen de los ingresos por obtención de premios",
     "616": "Sin Obligaciones Fiscales",
     "620": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos",
     "621": "Incorporación Fiscal",
-    "622": "Actividades Empresariales con ingresos a través de Plataformas Tecnológicas",
-    "623": "Simplificado de Confianza",
-    "624": "Plataformas Tecnológicas"  # This could be similar to 622
+    "622": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras",
+    "623": "Opcional para Grupos de Sociedades",
+    "624": "Coordinados",
+    "625": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas",
+    "626": "Régimen Simplificado de Confianza",
 }
 # --- END MAPPING DICTIONARIES ---
 
@@ -607,7 +609,7 @@ def parse_xml_invoice(xml_file_path):
                 combustible_detected = True
                 break
 
-        data["Combustible"] = "Yes" if combustible_detected else "No"
+        data["Combustible"] = "Si   " if combustible_detected else "No"
         # --- End Combustible Detection Logic ---
 
         # Emisor/Receptor Addresses/Location (Placeholders)
