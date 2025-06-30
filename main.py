@@ -372,6 +372,7 @@ def main():
 
     print(f"\nProcessing complete. Check the output folder for your Excel report.")
     print(f"Output saved at: {excel_output_path}")
+    # Delete me is just to check why it doesn't update the git
 
 
 if __name__ == "__main__":
