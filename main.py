@@ -2,24 +2,30 @@
 # This file handles the main application flow, including directory input and calling other modules.
 import platform
 import os
-# Assuming xml_parser has been fixed in previous steps
-from xml_parser import parse_xml_invoice
-from excel_exporter import export_to_excel
+# Used only to get the root for version detection
+import xml.etree.ElementTree as ET
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+# Import specific parsers based on CFDI version
+from xml_parser_33 import parse_cfdi_33_invoice
+from xml_parser_40 import parse_cfdi_40_invoice
+from excel_exporter import export_to_excel
+# Import from constants for file naming logic
+from constants import INVOICE_COLUMN_ORDER
+
 # Define the base directories where the XMLs will be stored and processed.
-# These paths are now relative to the current working directory of the script.
-# BASE_APP_DIR = "CFDI_Processor_App"
-BASE_APP_DIR = "../../AdminXML"
+# These paths are now defined relative to a conceptual "AdminXML" folder located two levels up
+# from where the script is run (e.g., if script is in AdminXML/CFDI_Processor_App, this points to AdminXML).
+BASE_APP_DIR = os.path.abspath(os.path.join(
+    os.path.dirname(__file__), "..", "..", "AdminXML"))
+# Adjusted to BovedaCFDI as per user's preference
 BOVEDA_XML_DIR = os.path.join(BASE_APP_DIR, "BovedaCFDI")
 REPORTS_DIR = os.path.join(BASE_APP_DIR, "Reports")
 
 # File to store the last used directory for persistence
-# This file will be stored within the REPORTS_DIR
 LAST_USED_DIR_FILE = os.path.join(REPORTS_DIR, "last_used_directory.txt")
-os.system(f"attrib +h {LAST_USED_DIR_FILE}")
 
 
 def clear_terminal():
@@ -32,14 +38,12 @@ def clear_terminal():
 
 def create_initial_directories():
     """Create the base application directories if they do not exist."""
-    # Ensure the parent application directory exists first, then its subdirectories
-    os.makedirs(os.path.abspath(BASE_APP_DIR), exist_ok=True)
-    # Ensure absolute path is created
-    os.makedirs(os.path.abspath(BOVEDA_XML_DIR), exist_ok=True)
-    # Ensure absolute path is created
-    os.makedirs(os.path.abspath(REPORTS_DIR), exist_ok=True)
+    # Ensure the BASE_APP_DIR and its subdirectories exist
+    os.makedirs(BASE_APP_DIR, exist_ok=True)
+    os.makedirs(BOVEDA_XML_DIR, exist_ok=True)
+    os.makedirs(REPORTS_DIR, exist_ok=True)
     print(
-        f"Ensured base directories exist: {os.path.abspath(BOVEDA_XML_DIR)} and {os.path.abspath(REPORTS_DIR)}")
+        f"Ensured base directories exist: {BOVEDA_XML_DIR} and {REPORTS_DIR}")
 
 
 def select_xml_directory_gui(title_text="Select XMLs Folder"):
@@ -56,7 +60,8 @@ def select_xml_directory_gui(title_text="Select XMLs Folder"):
     """
     # Determine initial directory for the file dialog
     # Default to the application's intended Boveda_XMLs path, resolved to absolute
-    initial_dir_to_use = os.path.abspath(BOVEDA_XML_DIR)
+    # This is already an absolute path due to os.path.abspath above
+    initial_dir_to_use = BOVEDA_XML_DIR
 
     # Try to read the last used directory from file
     if os.path.exists(LAST_USED_DIR_FILE):
@@ -92,8 +97,8 @@ def select_xml_directory_gui(title_text="Select XMLs Folder"):
     if selected_directory:
         try:
             # Ensure the REPORTS_DIR exists before trying to write the file
-            # os.path.abspath(REPORTS_DIR) ensures the path is fully resolved before os.makedirs
-            os.makedirs(os.path.abspath(REPORTS_DIR), exist_ok=True)
+            # REPORTS_DIR is already an absolute path
+            os.makedirs(REPORTS_DIR, exist_ok=True)
             with open(LAST_USED_DIR_FILE, 'w') as f:
                 f.write(selected_directory)
         except Exception as e:
@@ -144,9 +149,9 @@ def determine_file_naming_components(parsed_data_list):
     """
     Determines the RFC, TypeOfXML (Emitidas/Recibidas/Mixed), and Year_Month for filename.
 
-    Priority Logic (as provided by user from Claude 4.0 and further refined):
-    1. If invoices exist -> use invoices logic (to populate RFCs/dates)
-    2. If no invoices but nominas exist -> use nominas logic (to populate RFCs/dates)
+    Priority Logic:
+    1. If invoices exist -> use invoices logic
+    2. If no invoices but nominas exist -> use nominas logic
     3. Special nomina case: If only nominas with single RFC Emisor and single RFC Receptor -> Recibidas (employee scenario)
     """
     if not parsed_data_list:
@@ -163,8 +168,6 @@ def determine_file_naming_components(parsed_data_list):
     all_dates_set = set()  # Store (year, month) tuples
 
     # PRIORITY 1: Collect RFCs and Dates from Invoices AND Nomina (if invoices exist)
-    # This block populates all_rfcs_emisor, all_rfcs_receptor based on ALL documents (invoices and nominas)
-    # if there are ANY invoices present.
     if invoice_data:
         for data in parsed_data_list:  # Iterate over all parsed data, not just invoices
             emisor_rfc = data.get("RFC Emisor")
@@ -176,21 +179,16 @@ def determine_file_naming_components(parsed_data_list):
                 all_rfcs_receptor.add(receptor_rfc)
 
             # Extract dates (Fecha Emision prioritized)
-            date_str = data.get("Fecha Emision") or data.get("Fecha Timbrado")
+            date_str = data.get("Fecha Emision")
+            if not date_str:  # Fallback to Fecha Timbrado if Fecha Emision is not available
+                date_str = data.get("Fecha Timbrado")
+
             if date_str:
                 try:
-                    dt_object = None
-                    if 'T' in date_str and len(date_str) == 19:
-                        dt_object = datetime.strptime(
-                            date_str, "%Y-%m-%dT%H:%M:%S")
-                    elif ':' in date_str and len(date_str) > 10:
-                        dt_object = datetime.strptime(
-                            date_str, "%d/%m/%Y %H:%M:%S")
-                    elif '/' in date_str and len(date_str) == 10:
-                        dt_object = datetime.strptime(date_str, "%d/%m/%Y")
-
-                    if dt_object:
-                        all_dates_set.add((dt_object.year, dt_object.month))
+                    # Date format from parser is "DD/MM/YYYY HH:MM:SS"
+                    dt_object = datetime.strptime(
+                        date_str, "%d/%m/%Y %H:%M:%S")
+                    all_dates_set.add((dt_object.year, dt_object.month))
                 except ValueError:
                     pass
 
@@ -206,65 +204,48 @@ def determine_file_naming_components(parsed_data_list):
                 all_rfcs_receptor.add(receptor_rfc)
 
             # Extract dates (Fecha Emision prioritized)
-            date_str = data.get("Fecha Emision") or data.get("Fecha Timbrado")
+            date_str = data.get("Fecha Emision")
+            if not date_str:  # Fallback to Fecha Timbrado if Fecha Emision is not available
+                date_str = data.get("Fecha Timbrado")
+
             if date_str:
                 try:
-                    dt_object = None
-                    if 'T' in date_str:
-                        dt_object = datetime.strptime(
-                            date_str, "%Y-%m-%dT%H:%M:%S")
-                    elif ':' in date_str:
-                        dt_object = datetime.strptime(
-                            date_str, "%d/%m/%Y %H:%M:%S")
-                    elif '/' in date_str:
-                        dt_object = datetime.strptime(date_str, "%d/%m/%Y")
-
-                    if dt_object:
-                        all_dates_set.add((dt_object.year, dt_object.month))
+                    dt_object = datetime.strptime(
+                        date_str, "%d/%m/%Y %H:%M:%S")
+                    all_dates_set.add((dt_object.year, dt_object.month))
                 except ValueError:
                     pass
 
         # Special nomina logic (ONLY if no invoices and only nomina data processed)
-        # If there's exactly one Emisor RFC and exactly one Receptor RFC among nominas,
-        # it implies an employee receiving salary. The main RFC for the report
-        # should be the RECEPTOR RFC.
         if len(all_rfcs_emisor) == 1 and len(all_rfcs_receptor) == 1:
             temp_emisor_rfc = list(all_rfcs_emisor)[0]
             temp_receptor_rfc = list(all_rfcs_receptor)[0]
 
-            # If the single Emisor is NOT the same as the single Receptor (typical employee scenario)
             if temp_emisor_rfc != temp_receptor_rfc:
-                all_rfcs_emisor = set()  # Clear Emisor set
-                # Keep only the Receptor RFC as the "dominant" one
+                all_rfcs_emisor = set()
                 all_rfcs_receptor = {temp_receptor_rfc}
-            # If emisor and receptor are the same (self-issued/mixed for other reasons), treat as mixed later
 
     # Determine RFC part and TypeOfXML part
     rfc_part = "MixedRFCs"
     type_of_xml_part = "Report"
 
     # Scenario 1: All documents are emitted by a single, consistent RFC (Emitidas)
-    # This is true if, after initial data collection, there's only one unique RFC in all_rfcs_emisor set.
     if len(all_rfcs_emisor) == 1:
         dominant_rfc = list(all_rfcs_emisor)[0]
         rfc_part = dominant_rfc
         type_of_xml_part = "Emitidas"
     # Scenario 2: All documents are received by a single, consistent RFC (Recibidas)
-    # This is an 'elif' to ensure Emitidas takes priority if both sets happen to have 1 RFC.
     elif len(all_rfcs_receptor) == 1:
         dominant_rfc = list(all_rfcs_receptor)[0]
         rfc_part = dominant_rfc
         type_of_xml_part = "Recibidas"
     else:
         # Scenario 3: Single RFC in mixed roles, or truly mixed RFCs
-        # If no single dominant RFC for Emisor or Receptor, check the union.
         unique_combined_rfcs = all_rfcs_emisor.union(all_rfcs_receptor)
         if len(unique_combined_rfcs) == 1:
             dominant_rfc = list(unique_combined_rfcs)[0]
             rfc_part = dominant_rfc
-            # A single RFC, but it's not purely Emisor or Receptor based on initial checks
             type_of_xml_part = "Mixed"
-        # If len(unique_combined_rfcs) > 1, then rfc_part remains "MixedRFCs" and type_of_xml_part remains "Report"
 
     # Determine Year_Month part
     year_month_part = "UnknownDate"
@@ -272,15 +253,41 @@ def determine_file_naming_components(parsed_data_list):
         year, month = list(all_dates_set)[0]
         year_month_part = f"{year}_{month:02d}"
     elif len(all_dates_set) > 1:
-        # Get min and max year-month for a range
         sorted_dates = sorted(list(all_dates_set))
         min_year, min_month = sorted_dates[0]
         max_year, max_month = sorted_dates[-1]
-
-        # Updated MixedDates format with underscores
         year_month_part = f"MixedDates_{min_year}_{min_month:02d}-{max_year}_{max_month:02d}"
 
     return rfc_part, type_of_xml_part, year_month_part
+
+
+def parse_xml_file_by_version(xml_file_path):
+    """
+    Reads the XML file to determine its CFDI version and calls the appropriate parser.
+    """
+    try:
+        # It's better to read only a small portion or just the root to get the version
+        # rather than parsing the entire tree if it's not needed for initial check.
+        # However, ET.parse is robust enough for this purpose.
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+        cfdi_version = root.get('Version')
+
+        if cfdi_version == '3.3':
+            return parse_cfdi_33_invoice(xml_file_path)
+        elif cfdi_version == '4.0':
+            return parse_cfdi_40_invoice(xml_file_path)
+        else:
+            print(
+                f"Error: CFDI version '{cfdi_version}' not supported for {os.path.basename(xml_file_path)}. Skipping file.")
+            return None
+    except ET.ParseError as e:
+        print(f"Error parsing XML file {xml_file_path}: {e}")
+        return None
+    except Exception as e:
+        print(
+            f"An unexpected error occurred while reading version from {xml_file_path}: {e}")
+        return None
 
 
 def main():
@@ -321,7 +328,8 @@ def main():
             if file.lower().endswith(".xml"):
                 xml_file_path = os.path.join(root_dir, file)
                 print(f" - Processing {file}...")
-                parsed_data = parse_xml_invoice(xml_file_path)
+                # Call the version dispatcher function
+                parsed_data = parse_xml_file_by_version(xml_file_path)
                 if parsed_data:
                     all_parsed_data.append(parsed_data)
                     processed_count += 1
@@ -340,8 +348,8 @@ def main():
 
     print(
         f"\nProcessed {processed_count} XML files. ({error_count} errors encountered.)")
-    print(f"Found {len(invoice_data)} CFDI 4.0 Electronic Invoices.")
-    print(f"Found {len(nomina_data)} CFDI 4.0 Nomina complement 1.2.\n")
+    print(f"Found {len(invoice_data)} CFDI Electronic Invoices.")
+    print(f"Found {len(nomina_data)} CFDI Nomina complement.\n")
 
     # Determine dynamic filename components
     rfc_part, type_part, date_part = determine_file_naming_components(
