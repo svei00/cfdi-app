@@ -10,7 +10,8 @@ NAMESPACES_CFDI_33 = {
     'tfd': 'http://www.sat.gob.mx/TimbreFiscalDigital',
     'iedu': 'http://www.sat.gob.mx/iedu',
     'implocal': 'http://www.sat.gob.mx/implocal',
-    'cce11': 'http://www.sat.gob.mx/ComercioExterior11', # Even if not explicitly used, good to have if present
+    # Even if not explicitly used, good to have if present
+    'cce11': 'http://www.sat.gob.mx/ComercioExterior11',
     'xsi': 'http://www.w3.org/2001/XMLSchema-instance'
 }
 
@@ -20,7 +21,8 @@ NAMESPACES_CFDI_40 = {
     'tfd': 'http://www.sat.gob.mx/TimbreFiscalDigital',
     'iedu': 'http://www.sat.gob.mx/iedu',
     'implocal': 'http://www.sat.gob.mx/implocal',
-    'cce11': 'http://www.sat.gob.mx/ComercioExterior11', # Even if not explicitly used, good to have if present
+    # Even if not explicitly used, good to have if present
+    'cce11': 'http://www.sat.gob.mx/ComercioExterior11',
     'xsi': 'http://www.w3.org/2001/XMLSchema-instance'
 }
 
@@ -29,7 +31,7 @@ NAMESPACES_CFDI_40 = {
 
 TIPO_COMPROBANTE_MAP = {
     "I": "Factura",     # Ingreso
-    "E": "NotaCredito", # Egreso (Nota de crédito)
+    "E": "NotaCredito",  # Egreso (Nota de crédito)
     "T": "Traslado",    # Traslado
     "P": "Pago",        # Recepción de pagos
     "N": "Nómina"       # Nómina
@@ -118,22 +120,18 @@ REGIMEN_FISCAL_RECEPTOR_MAP = {
 # Define the precise order of columns for the Invoice sheet.
 # This list will be used to ensure the DataFrame columns match this order when exporting to Excel.
 INVOICE_COLUMN_ORDER = [
-    # Placeholder: Requires external logic/data (e.g., SAT validation, internal database).
     "Verificado ó Asoc.",
-    # Placeholder: Requires external logic/data (e.g., SAT validation for 'Cancelado' status).
     "Estado SAT",
     "Version",
     "Tipo",
     "Fecha Emision",
     "Fecha Timbrado",
-    # Placeholder: Not directly in XML, typically derived from payment status.
     "EstadoPago",
-    # Placeholder: Not directly in XML for general invoices, present in Nomina.
     "FechaPago",
     "Factura",            # Merged field: Serie + Folio
     "UUID",
     "UUID Relacion",
-    "TipoDeRelacion", # Corrected from "TipoRelacion" to match user's expected column header
+    # "TipoDeRelacion", # Removed as per user's request to avoid disrupting analysis
     "RFC Emisor",
     "Nombre Emisor",
     "LugarDeExpedicion",
@@ -141,7 +139,7 @@ INVOICE_COLUMN_ORDER = [
     "Nombre Receptor",
     "ResidenciaFiscal",
     "NumRegIdTrib",
-    "UsoCFDI",  # This will now be mapped to include description
+    "UsoCFDI",
     "SubTotal",
     "Descuento",
     "Total IEPS",
@@ -150,8 +148,8 @@ INVOICE_COLUMN_ORDER = [
     "Retenido ISR",
     "ISH",
     "Total",
-    "Total Trasladados",  # Re-added for explicit extraction
-    "Total Retenidos",   # Re-added for explicit extraction
+    "Total Trasladados",
+    "Total Retenidos",
     "Total LocalTrasladado",
     "Total LocalRetenido",
     "Complemento",
@@ -180,8 +178,9 @@ INVOICE_COLUMN_ORDER = [
     "Localidad Receptor",
     "IVA 8%",
     "IVA Ret 6%",
-    "RegimenFiscalReceptor",  # This will now be mapped to include description
+    "RegimenFiscalReceptor",
     "DomicilioFiscalReceptor",
+    # "TipoDeRelacion", # Removed as per user's request to avoid disrupting analysis
     "CURP Dependiente",
     "Nivel Educativo",
     "Nombre Dependiente",
@@ -194,13 +193,12 @@ INVOICE_COLUMN_ORDER = [
 
 # Fields common across CFDI versions (3.3 & 4.0) that require explicit XPath
 CFDI_COMMON_CHILD_ELEMENTS_TO_EXTRACT = [
-    # CFDI Relacionados
-    (".//cfdi:CfdiRelacionados", "TipoRelacion", "", "TipoDeRelacion"), # Column name match excel_exporter
+    # CFDI Relacionados - TipoRelacion is now excluded from INVOICE_COLUMN_ORDER
     (".//cfdi:CfdiRelacionado", "UUID", "", "UUID Relacion"),
     # Emisor
     (".//cfdi:Emisor", "Rfc", "", "RFC Emisor"),
     (".//cfdi:Emisor", "Nombre", "", "Nombre Emisor"),
-    (".//cfdi:Emisor", "RegimenFiscal", "", "RegimenFiscal Emisor"), # Corrected from "Regimen Fiscal Emisor"
+    (".//cfdi:Emisor", "RegimenFiscal", "", "RegimenFiscal Emisor"),
     # Receptor
     (".//cfdi:Receptor", "Rfc", "", "RFC Receptor"),
     (".//cfdi:Receptor", "Nombre", "", "Nombre Receptor"),
@@ -226,7 +224,8 @@ NOMINA_FIELDS_TO_EXTRACT = [
     (".//nomina12:Emisor", "Curp", "", "CURP Patron"),
     (".//nomina12:Emisor", "RfcPatronOrigen", "", "RFC Patron"),
     # Nomina 1.2 Receptor
-    (".//nomina12:Receptor", "Curp", "", "CURP"), # This is CURP del Empleado, not Patronal
+    # This is CURP del Empleado, not Patronal
+    (".//nomina12:Receptor", "Curp", "", "CURP"),
     (".//nomina12:Receptor", "NumSeguridadSocial", "", "NSS"),
     (".//nomina12:Receptor", "FechaInicioRelLaboral", "", "Inicio Relacion Laboral"),
     # (".//nomina12:Receptor", "Rfc", "", "RFC"), # Already handled by main CFDI RFC Receptor
@@ -239,12 +238,17 @@ NOMINA_FIELDS_TO_EXTRACT = [
     (".//nomina12:Receptor", "SalarioDiarioIntegrado", "0.00", "SDI"),
     (".//nomina12:Receptor", "ClaveEntFed", "", "Entidad"),
     # Nomina 1.2 Deducciones (TotalImpuestosRetenidos)
-    (".//nomina12:Deducciones", "TotalImpuestosRetenidos", "0.00", "ImpuestosRetenidos"), # Column name in Excel is "ImpuestosRetenidos"
+    (".//nomina12:Deducciones", "TotalImpuestosRetenidos", "0.00",
+     "ImpuestosRetenidos"),  # Column name in Excel is "ImpuestosRetenidos"
     # Nomina Percepciones totals for Gravado and Exento, to be calculated
-    ("TotalGravado", "", "", "TotalGravado"), # Placeholder for calculated field
-    ("TotalExcento", "", "", "TotalExcento"), # Placeholder for calculated field
-    ("TotalDeducciones", "", "", "TotalDeducciones"), # Placeholder for calculated field
-    ("TotalOtrosPagos", "", "", "TotalOtrosPagos"), # Placeholder for calculated field
+    # Placeholder for calculated field
+    ("TotalGravado", "", "", "TotalGravado"),
+    # Placeholder for calculated field
+    ("TotalExcento", "", "", "TotalExcento"),
+    # Placeholder for calculated field
+    ("TotalDeducciones", "", "", "TotalDeducciones"),
+    # Placeholder for calculated field
+    ("TotalOtrosPagos", "", "", "TotalOtrosPagos"),
 ]
 
 
@@ -253,4 +257,5 @@ FUEL_PROD_SERV_CODES = ["15101514", "15101501", "15101502", "15101500"]
 # Define common units for fuel
 FUEL_UNITS = ["LTR", "LITRO", "GAL", "GALON", "KL", "KILO", "KILOGALON", "E48"]
 # Define keywords to look for in Description (case-insensitive)
-FUEL_KEYWORDS = ["MAGNA", "PREMIUM", "DIESEL", "GASOLINA", "COMBUSTIBLE", "GAS"]
+FUEL_KEYWORDS = ["MAGNA", "PREMIUM", "DIESEL",
+                 "GASOLINA", "COMBUSTIBLE", "GAS"]
