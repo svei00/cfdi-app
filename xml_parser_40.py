@@ -452,7 +452,7 @@ def parse_cfdi_40_invoice(xml_file_path):
             try:
                 dt_obj = datetime.strptime(
                     data["Fecha Emision"], "%Y-%m-%dT%H:%M:%S")
-                data["Fecha Emision"] = dt_obj.strftime("%d/%m/%Y %H:%M:%S")
+                data["Fecha Emision"] = dt_obj.strftime("%d/%m/%Y")
             except ValueError:
                 pass
 
