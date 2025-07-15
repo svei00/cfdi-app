@@ -90,7 +90,7 @@ def _extract_tax_details(root, data, namespaces):
         data["Total Retenidos"] = 0.0
 
     # --- Process Specific Traslados (IVA, IEPS) from Conceptos ONLY ---
-    for concepto_traslado in root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", namespaces):
+    for concepto_traslado in root.findall(".//cfdi:Concepto/cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", namespaces):
         impuesto_code = concepto_traslado.get("Impuesto", "").strip()
         tipo_factor = concepto_traslado.get("TipoFactor", "").strip()
         tasa_ocuota = concepto_traslado.get("TasaOCuota", "").strip()
@@ -182,6 +182,7 @@ def _extract_iedu_data(root, data, namespaces):
     Extracts Specific Data from IEDU Complement.
     This function expects the root of the XML (cfdi:Comprobante) and navigates from there.
     """
+    # Corrected XPath to find iedu:instEducativas nested under cfdi:Concepto/cfdi:ComplementoConcepto
     iedu_complement = root.find(
         ".//cfdi:Concepto/cfdi:ComplementoConcepto/iedu:instEducativas", namespaces)
     if iedu_complement is not None:
@@ -452,7 +453,8 @@ def parse_cfdi_40_invoice(xml_file_path):
             try:
                 dt_obj = datetime.strptime(
                     data["Fecha Emision"], "%Y-%m-%dT%H:%M:%S")
-                data["Fecha Emision"] = dt_obj.strftime("%d/%m/%Y")
+                data["Fecha Emision"] = dt_obj.strftime(
+                    "%d/%m/%Y")  # Corrected: DD/MM/YYYY
             except ValueError:
                 pass
 
@@ -460,7 +462,8 @@ def parse_cfdi_40_invoice(xml_file_path):
             try:
                 dt_obj = datetime.strptime(
                     data["Fecha Timbrado"], "%Y-%m-%dT%H:%M:%S")
-                data["Fecha Timbrado"] = dt_obj.strftime("%d/%m/%Y %H:%M:%S")
+                data["Fecha Timbrado"] = dt_obj.strftime(
+                    "%d/%m/%Y %H:%M:%S")  # Corrected: DD/MM/YYYY HH:MM:SS
             except ValueError:
                 pass
 

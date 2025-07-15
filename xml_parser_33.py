@@ -131,7 +131,7 @@ def _extract_tax_details(root, data, namespaces):
                 data["IEPS 160%"] += importe
 
     # --- Process Specific Retenciones (ISR, IVA) from Conceptos ONLY ---
-    for concepto_retencion in root.findall(".//cfdi:Conceptos/cfdi:Concepto/cfdi:Impuestos/cfdi:Retenciones/cfdi:Retencion", namespaces):
+    for concepto_retencion in root.findall(".//cfdi:Concepto/cfdi:Impuestos/cfdi:Retenciones/cfdi:Retencion", namespaces):
         impuesto_code = concepto_retencion.get("Impuesto", "").strip()
         importe_str = concepto_retencion.get("Importe", "0.00").strip()
 
@@ -444,7 +444,8 @@ def parse_cfdi_33_invoice(xml_file_path):
             try:
                 dt_obj = datetime.strptime(
                     data["Fecha Emision"], "%Y-%m-%dT%H:%M:%S")
-                data["Fecha Emision"] = dt_obj.strftime("%d/%m/%Y")
+                data["Fecha Emision"] = dt_obj.strftime(
+                    "%d/%m/%Y")  # Corrected: DD/MM/YYYY
             except ValueError:
                 pass
 
@@ -452,7 +453,8 @@ def parse_cfdi_33_invoice(xml_file_path):
             try:
                 dt_obj = datetime.strptime(
                     data["Fecha Timbrado"], "%Y-%m-%dT%H:%M:%S")
-                data["Fecha Timbrado"] = dt_obj.strftime("%d/%m/%Y %H:%M:%S")
+                data["Fecha Timbrado"] = dt_obj.strftime(
+                    "%d/%m/%Y %H:%M:%S")  # Corrected: DD/MM/YYYY HH:MM:SS
             except ValueError:
                 pass
 
