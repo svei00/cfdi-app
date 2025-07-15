@@ -148,6 +148,7 @@ def select_file_save_path_gui(initial_dir=".", default_filename="CFDI_Export.xls
 def determine_file_naming_components(parsed_data_list):
     """
     Determines the RFC, TypeOfXML (Emitidas/Recibidas/Mixed), and Year_Month for filename.
+    Handles different date formats for parsing.
 
     Priority Logic:
     1. If invoices exist -> use invoices logic
@@ -167,85 +168,72 @@ def determine_file_naming_components(parsed_data_list):
     all_rfcs_receptor = set()
     all_dates_set = set()  # Store (year, month) tuples
 
-    # PRIORITY 1: Collect RFCs and Dates from Invoices AND Nomina (if invoices exist)
-    if invoice_data:
-        for data in parsed_data_list:  # Iterate over all parsed data, not just invoices
-            emisor_rfc = data.get("RFC Emisor")
-            receptor_rfc = data.get("RFC Receptor")
+    # Helper function to parse date strings with multiple formats
+    def parse_date_string(date_str_val):
+        if not date_str_val:
+            return None
 
-            if emisor_rfc:
-                all_rfcs_emisor.add(emisor_rfc)
-            if receptor_rfc:
-                all_rfcs_receptor.add(receptor_rfc)
+        # Try the full timestamp format first (for Fecha Timbrado)
+        try:
+            return datetime.strptime(date_str_val, "%d/%m/%Y %H:%M:%S")
+        except ValueError:
+            pass
 
-            # Extract dates (Fecha Emision prioritized)
-            date_str = data.get("Fecha Emision")
-            if not date_str:  # Fallback to Fecha Timbrado if Fecha Emision is not available
-                date_str = data.get("Fecha Timbrado")
+        # If that fails, try the date-only format (for Fecha Emision)
+        try:
+            return datetime.strptime(date_str_val, "%d/%m/%Y")
+        except ValueError:
+            pass
 
-            if date_str:
-                try:
-                    # Date format from parser is "DD/MM/YYYY HH:MM:SS"
-                    dt_object = datetime.strptime(
-                        date_str, "%d/%m/%Y %H:%M:%S")
-                    all_dates_set.add((dt_object.year, dt_object.month))
-                except ValueError:
-                    pass
+        return None  # Return None if neither format matches
 
-    # PRIORITY 2: If no invoices, use nominas only for RFC and date collection
-    elif nomina_data:
-        for data in nomina_data:  # Only iterate over nomina data if no invoices
-            emisor_rfc = data.get("RFC Emisor")
-            receptor_rfc = data.get("RFC Receptor")
+    # Collect RFCs and Dates from ALL parsed data (invoices and nominas)
+    for data in parsed_data_list:
+        emisor_rfc = data.get("RFC Emisor")
+        receptor_rfc = data.get("RFC Receptor")
 
-            if emisor_rfc:
-                all_rfcs_emisor.add(emisor_rfc)
-            if receptor_rfc:
-                all_rfcs_receptor.add(receptor_rfc)
+        if emisor_rfc:
+            all_rfcs_emisor.add(emisor_rfc)
+        if receptor_rfc:
+            all_rfcs_receptor.add(receptor_rfc)
 
-            # Extract dates (Fecha Emision prioritized)
-            date_str = data.get("Fecha Emision")
-            if not date_str:  # Fallback to Fecha Timbrado if Fecha Emision is not available
-                date_str = data.get("Fecha Timbrado")
+        # Extract dates (Fecha Emision prioritized)
+        date_str = data.get("Fecha Emision")
+        if not date_str:  # Fallback to Fecha Timbrado if Fecha Emision is not available
+            date_str = data.get("Fecha Timbrado")
 
-            if date_str:
-                try:
-                    dt_object = datetime.strptime(
-                        date_str, "%d/%m/%Y %H:%M:%S")
-                    all_dates_set.add((dt_object.year, dt_object.month))
-                except ValueError:
-                    pass
+        dt_object = parse_date_string(date_str)
+        if dt_object:
+            all_dates_set.add((dt_object.year, dt_object.month))
 
-        # Special nomina logic (ONLY if no invoices and only nomina data processed)
-        if len(all_rfcs_emisor) == 1 and len(all_rfcs_receptor) == 1:
-            temp_emisor_rfc = list(all_rfcs_emisor)[0]
-            temp_receptor_rfc = list(all_rfcs_receptor)[0]
-
-            if temp_emisor_rfc != temp_receptor_rfc:
-                all_rfcs_emisor = set()
-                all_rfcs_receptor = {temp_receptor_rfc}
-
-    # Determine RFC part and TypeOfXML part
+    # --- REVISED RFC AND TYPE NAMING LOGIC ---
     rfc_part = "MixedRFCs"
     type_of_xml_part = "Report"
 
-    # Scenario 1: All documents are emitted by a single, consistent RFC (Emitidas)
     if len(all_rfcs_emisor) == 1:
+        # If there's only one unique Emisor RFC across all documents
         dominant_rfc = list(all_rfcs_emisor)[0]
         rfc_part = dominant_rfc
         type_of_xml_part = "Emitidas"
-    # Scenario 2: All documents are received by a single, consistent RFC (Recibidas)
+
+        # Special check for Nomina: if it's a single Emisor and single Receptor,
+        # and they are different, it's likely a "Recibidas" scenario for the employee.
+        if len(all_rfcs_receptor) == 1 and list(all_rfcs_receptor)[0] != dominant_rfc and nomina_data and not invoice_data:
+            rfc_part = list(all_rfcs_receptor)[0]
+            type_of_xml_part = "Recibidas"
+
     elif len(all_rfcs_receptor) == 1:
+        # If there's only one unique Receptor RFC across all documents
         dominant_rfc = list(all_rfcs_receptor)[0]
         rfc_part = dominant_rfc
         type_of_xml_part = "Recibidas"
     else:
-        # Scenario 3: Single RFC in mixed roles, or truly mixed RFCs
+        # If neither of the above, it's a mixed scenario.
+        # If there's only one unique RFC overall (Emisor or Receptor), use that as the RFC part.
         unique_combined_rfcs = all_rfcs_emisor.union(all_rfcs_receptor)
         if len(unique_combined_rfcs) == 1:
-            dominant_rfc = list(unique_combined_rfcs)[0]
-            rfc_part = dominant_rfc
-            type_of_xml_part = "Mixed"
+            rfc_part = list(unique_combined_rfcs)[0]
+            type_of_xml_part = "Mixed"  # Still "Mixed" as it's not purely Emitidas/Recibidas
 
     # Determine Year_Month part
     year_month_part = "UnknownDate"
@@ -256,7 +244,12 @@ def determine_file_naming_components(parsed_data_list):
         sorted_dates = sorted(list(all_dates_set))
         min_year, min_month = sorted_dates[0]
         max_year, max_month = sorted_dates[-1]
-        year_month_part = f"MixedDates_{min_year}_{min_month:02d}-{max_year}_{max_month:02d}"
+        # If years are different, show the range of years
+        if min_year != max_year:
+            year_month_part = f"MixedDates_{min_year}-{max_year}"
+        # If years are the same but months are different, show month range
+        else:
+            year_month_part = f"{min_year}_{min_month:02d}-{max_month:02d}"
 
     return rfc_part, type_of_xml_part, year_month_part
 
@@ -266,9 +259,6 @@ def parse_xml_file_by_version(xml_file_path):
     Reads the XML file to determine its CFDI version and calls the appropriate parser.
     """
     try:
-        # It's better to read only a small portion or just the root to get the version
-        # rather than parsing the entire tree if it's not needed for initial check.
-        # However, ET.parse is robust enough for this purpose.
         tree = ET.parse(xml_file_path)
         root = tree.getroot()
         cfdi_version = root.get('Version')
@@ -372,7 +362,6 @@ def main():
 
     print(f"\nProcessing complete. Check the output folder for your Excel report.")
     print(f"Output saved at: {excel_output_path}")
-    # Delete me is just to check why it doesn't update the git
 
 
 if __name__ == "__main__":
