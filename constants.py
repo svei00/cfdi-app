@@ -23,7 +23,8 @@ NAMESPACES_CFDI_40 = {
     'implocal': 'http://www.sat.gob.mx/implocal',
     # Even if not explicitly used, good to have if present
     'cce11': 'http://www.sat.gob.mx/ComercioExterior11',
-    'xsi': 'http://www.w3.org/2001/XMLSchema-instance'
+    'xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+    'pago20': 'http://www.sat.gob.mx/Pagos20'  # New namespace for Pagos 2.0
 }
 
 # --- MAPPING DICTIONARIES ---
@@ -131,7 +132,6 @@ INVOICE_COLUMN_ORDER = [
     "Factura",            # Merged field: Serie + Folio
     "UUID",
     "UUID Relacion",
-    # "TipoDeRelacion", # Removed as per user's request to avoid disrupting analysis
     "RFC Emisor",
     "Nombre Emisor",
     "LugarDeExpedicion",
@@ -180,11 +180,131 @@ INVOICE_COLUMN_ORDER = [
     "IVA Ret 6%",
     "RegimenFiscalReceptor",
     "DomicilioFiscalReceptor",
-    # "TipoDeRelacion", # Removed as per user's request to avoid disrupting analysis
     "CURP Dependiente",
     "Nivel Educativo",
     "Nombre Dependiente",
 ]
+
+# Define the precise order of columns for the Pagos sheet.
+# This list will be used to ensure the DataFrame columns match this order when exporting to Excel.
+PAGOS_COLUMN_ORDER = [
+    "Verificado o Asoc",
+    "Estado SAT",
+    "No. Certificado Emisor",
+    "No. Certificado SAT",
+    "Version CFDI",  # From Comprobante
+    "TipoComprobante",
+    "Fecha Emision",  # From Comprobante
+    "Fecha Timbrado",  # From TimbreFiscalDigital
+    "Serie CFDI",  # From Comprobante Serie
+    "Folio CFDI",  # From Comprobante Folio
+    "UUID CFDI",  # From TimbreFiscalDigital
+    "RFC Emisor CFDI",  # From Comprobante Emisor
+    "Nombre Emisor CFDI",  # From Comprobante Emisor
+    "Regimen Fiscal Emisor CFDI",  # From Comprobante Emisor
+    "Lugar de Expedicion CFDI",  # From Comprobante
+    "RFC Receptor CFDI",  # From Comprobante Receptor
+    "Nombre Receptor CFDI",  # From Comprobante Receptor
+    "Regimen Fiscal Receptor CFDI",  # From Comprobante Receptor
+    "DomicilioFiscalReceptor CFDI",  # From Comprobante Receptor
+    "ResidenciaFiscal CFDI",  # From Comprobante Receptor
+    "NumRegIdTrib CFDI",  # From Comprobante Receptor
+    "UsoCFDI CFDI",  # From Comprobante Receptor
+    "Complementos Comprobante",
+    "Archivo XML",
+    "Version Pago",  # From pago20:Pagos
+    "TotalRetencionesIVA",  # From pago20:ImpuestosP
+    "TotalRetencionesISR",  # From pago20:ImpuestosP
+    "TotalRetencionesIEPS",  # From pago20:ImpuestosP
+    "TotalTrasladosBaseIVA16",  # From pago20:Totales
+    "TotalTrasladosImpuestoIVA16",  # From pago20:Totales
+    "TotalTrasladosBaseIVA8",  # From pago20:Totales
+    "TotalTrasladosImpuestoIVA8",  # From pago20:Totales
+    "TotalTrasladosBaseIVA0",  # From pago20:Totales
+    "TotalTrasladosImpuestoIVA0",  # From pago20:Totales
+    "TotalTrasladadoBaseIVAExento",  # From pago20:Totales
+    "MontoTotalPagos",  # From pago20:Totales
+    "FechaPago",  # From pago20:Pago
+    "FormaDePagoP",  # From pago20:Pago
+    "MonedaP",  # From pago20:Pago
+    "TipoCambioP",  # From pago20:Pago
+    "Monto Pago",  # From pago20:Pago
+    "NumOperacion",  # From pago20:Pago
+    "RFCEmisorCtaOrd",  # From pago20:Pago
+    "NombreBancoOrdExt",  # From pago20:Pago
+    "CtaOrdenante",  # From pago20:Pago
+    "RFCEmisorCTABen",  # From pago20:Pago
+    "CtaBeneficiario",  # From pago20:Pago
+    "TipoCadPago",  # From pago20:Pago
+    "CertPago",  # From pago20:Pago
+    "CadPago",  # From pago20:Pago
+    "SelloPago",  # From pago20:Pago
+    "IdDocumento Relacionado",  # From pago20:DoctoRelacionado
+    "Serie Relacionada",  # From pago20:DoctoRelacionado
+    "Folio Relacionado",  # From pago20:DoctoRelacionado
+    "MonedaDR",  # From pago20:DoctoRelacionado
+    "TipoCambioDR",  # From pago20:DoctoRelacionado
+    "EquivalenciaDR",  # From pago20:DoctoRelacionado
+    "MetodoDePagoDR",  # From pago20:DoctoRelacionado
+    "NumParcialidad",  # From pago20:DoctoRelacionado
+    "ImpSaldoAnt",  # From pago20:DoctoRelacionado
+    "ImpPagado",  # From pago20:DoctoRelacionado
+    "ImpSaldoInsoluto",  # From pago20:DoctoRelacionado
+    "ObjetoImpDR",  # From pago20:DoctoRelacionado
+    "IVA Excento",  # From pago20:TrasladoDR
+    "IVA Excento Base",  # From pago20:TrasladoDR
+    "IVA Cero",  # From pago20:TrasladoDR
+    "IVA Cero Base",  # From pago20:TrasladoDR
+    "IVA 8 Base",  # From pago20:TrasladoDR
+    "IVA 8 Importe",  # From pago20:TrasladoDR
+    "IVA 16 Base",  # From pago20:TrasladoDR
+    "IVA 16 Importe",  # From pago20:TrasladoDR
+    "IEPS Cero",  # From pago20:TrasladoDR
+    "IEPS Cero Base",  # From pago20:TrasladoDR
+    "IEPS 3 Base",  # From pago20:TrasladoDR
+    "IEPS 3 Importe",  # From pago20:TrasladoDR
+    "IEPS 6 Base",  # From pago20:TrasladoDR
+    "IEPS 6 Importe",  # From pago20:TrasladoDR
+    "IEPS 7 Base",  # From pago20:TrasladoDR
+    "IEPS 7 Importe",  # From pago20:TrasladoDR
+    "IEPS 8 Base",  # From pago20:TrasladoDR
+    "IEPS 8 Importe",  # From pago20:TrasladoDR
+    "IEPS 9 Base",  # From pago20:TrasladoDR
+    "IEPS 9 Importe",  # From pago20:TrasladoDR
+    "IEPS 25 Base",  # From pago20:TrasladoDR
+    "IEPS 25 Importe",  # From pago20:TrasladoDR
+    "IEPS 26.5 Base",  # From pago20:TrasladoDR
+    "IEPS 26.5 Importe",  # From pago20:TrasladoDR
+    "IEPS 30 Base",  # From pago20:TrasladoDR
+    "IEPS 30 Importe",  # From pago20:TrasladoDR
+    "IEPS 30.4 Base",  # From pago20:TrasladoDR
+    "IEPS 30.4 Importe",  # From pago20:TrasladoDR
+    "IEPS 50 Base",  # From pago20:TrasladoDR
+    "IEPS 50 Importe",  # From pago20:TrasladoDR
+    "IEPS 53 Base",  # From pago20:TrasladoDR
+    "IEPS 53 Importe",  # From pago20:TrasladoDR
+    "IEPS 160 Base",  # From pago20:TrasladoDR
+    "IEPS 160 Importe",  # From pago20:TrasladoDR
+    "Ret ISR 1.25 Base",  # From pago20:RetencionDR
+    "Ret ISR 1.25 Importe",  # From pago20:RetencionDR
+    "Ret ISR 10 Base",  # From pago20:RetencionDR
+    "Ret ISR 10 Importe",  # From pago20:RetencionDR
+    "Ret IVA 4 Base",  # From pago20:RetencionDR
+    "Ret IVA 4 Importe",  # From pago20:RetencionDR
+    "Ret IVA 10.667 Base",  # From pago20:RetencionDR
+    "Ret IVA 10.667 Importe",  # From pago20:RetencionDR
+    "Ret IVA 2 Base",  # From pago20:RetencionDR
+    "Ret IVA 2 Importe",  # From pago20:RetencionDR
+    "Ret IVA 5.33 Base",  # From pago20:RetencionDR
+    "Ret IVA 5.33 Importe",  # From pago20:RetencionDR
+    "Ret IVA 8 Base",  # From pago20:RetencionDR
+    "Ret IVA 8 Importe",  # From pago20:RetencionDR
+    "Ret IVA 6 Base",  # From pago20:RetencionDR
+    "Ret IVA 6 Importe",  # From pago20:RetencionDR
+    "Ret IVA 16 Base",  # From pago20:RetencionDR
+    "Ret IVA 16 Importe",  # From pago20:RetencionDR
+]
+
 
 # --- XML FIELD EXTRACTION DEFINITIONS ---
 # List of XML tags/attributes to extract for CFDI elements not directly on the Comprobante root.
@@ -250,6 +370,130 @@ NOMINA_FIELDS_TO_EXTRACT = [
     # Placeholder for calculated field
     ("TotalOtrosPagos", "", "", "TotalOtrosPagos"),
 ]
+
+# Fields for the main Pago (pago20:Pago)
+PAGO_FIELDS_TO_EXTRACT = [
+    # Attributes from pago20:Pagos (main complement)
+    (".//pago20:Pagos", "Version", "", "Version Pago"),
+    # Attributes from pago20:Totales (nested under Pagos)
+    (".//pago20:Totales", "TotalRetencionesIVA", "0.00", "TotalRetencionesIVA"),
+    (".//pago20:Totales", "TotalRetencionesISR", "0.00", "TotalRetencionesISR"),
+    (".//pago20:Totales", "TotalRetencionesIEPS", "0.00", "TotalRetencionesIEPS"),
+    (".//pago20:Totales", "TotalTrasladosBaseIVA16",
+     "0.00", "TotalTrasladosBaseIVA16"),
+    (".//pago20:Totales", "TotalTrasladosImpuestoIVA16",
+     "0.00", "TotalTrasladosImpuestoIVA16"),
+    (".//pago20:Totales", "TotalTrasladosBaseIVA8", "0.00", "TotalTrasladosBaseIVA8"),
+    (".//pago20:Totales", "TotalTrasladosImpuestoIVA8",
+     "0.00", "TotalTrasladosImpuestoIVA8"),
+    (".//pago20:Totales", "TotalTrasladosBaseIVA0", "0.00", "TotalTrasladosBaseIVA0"),
+    (".//pago20:Totales", "TotalTrasladosImpuestoIVA0",
+     "0.00", "TotalTrasladosImpuestoIVA0"),
+    (".//pago20:Totales", "TotalTrasladadoBaseIVAExento",
+     "0.00", "TotalTrasladadoBaseIVAExento"),
+    (".//pago20:Totales", "MontoTotalPagos", "0.00", "MontoTotalPagos"),
+    # Attributes from pago20:Pago (individual payment)
+    (".//pago20:Pago", "FechaPago", "", "FechaPago"),
+    (".//pago20:Pago", "FormaDePagoP", "", "FormaDePagoP"),
+    (".//pago20:Pago", "MonedaP", "", "MonedaP"),
+    (".//pago20:Pago", "TipoCambioP", "1.0", "TipoCambioP"),
+    (".//pago20:Pago", "Monto", "0.00", "Monto Pago"),
+    (".//pago20:Pago", "NumOperacion", "", "NumOperacion"),
+    (".//pago20:Pago", "RfcEmisorCtaOrd", "", "RFCEmisorCtaOrd"),
+    (".//pago20:Pago", "NomBancoOrdExt", "", "NombreBancoOrdExt"),
+    (".//pago20:Pago", "CtaOrdenante", "", "CtaOrdenante"),
+    (".//pago20:Pago", "RfcEmisorCtaBen", "", "RFCEmisorCTABen"),
+    (".//pago20:Pago", "CtaBeneficiario", "", "CtaBeneficiario"),
+    (".//pago20:Pago", "TipoCadPago", "", "TipoCadPago"),
+    (".//pago20:Pago", "CertPago", "", "CertPago"),
+    (".//pago20:Pago", "CadPago", "", "CadPago"),
+    (".//pago20:Pago", "SelloPago", "", "SelloPago"),
+]
+
+# Fields for DoctoRelacionado (pago20:DoctoRelacionado)
+PAGO_DR_FIELDS_TO_EXTRACT = [
+    (".//pago20:DoctoRelacionado", "IdDocumento", "", "IdDocumento Relacionado"),
+    (".//pago20:DoctoRelacionado", "Serie", "", "Serie Relacionada"),
+    (".//pago20:DoctoRelacionado", "Folio", "", "Folio Relacionado"),
+    (".//pago20:DoctoRelacionado", "MonedaDR", "", "MonedaDR"),
+    (".//pago20:DoctoRelacionado", "TipoCambioDR", "1.0", "TipoCambioDR"),
+    (".//pago20:DoctoRelacionado", "EquivalenciaDR", "1.0", "EquivalenciaDR"),
+    (".//pago20:DoctoRelacionado", "MetodoDePagoDR", "", "MetodoDePagoDR"),
+    (".//pago20:DoctoRelacionado", "NumParcialidad", "", "NumParcialidad"),
+    (".//pago20:DoctoRelacionado", "ImpSaldoAnt", "0.00", "ImpSaldoAnt"),
+    (".//pago20:DoctoRelacionado", "ImpPagado", "0.00", "ImpPagado"),
+    (".//pago20:DoctoRelacionado", "ImpSaldoInsoluto", "0.00", "ImpSaldoInsoluto"),
+    (".//pago20:DoctoRelacionado", "ObjetoImpDR", "", "ObjetoImpDR"),
+]
+
+# Tax fields within DoctoRelacionado (pago20:ImpuestosDR/TrasladosDR/RetencionesDR)
+PAGO_DR_TAX_FIELDS = {
+    # TrasladosDR
+    "IVA Excento": ("IVA", "Exento", "0.00"),
+    "IVA Excento Base": ("IVA", "Exento_Base", "0.00"),
+    "IVA Cero": ("IVA", "0.000000_Importe", "0.00"),
+    "IVA Cero Base": ("IVA", "0.000000_Base", "0.00"),
+    "IVA 8 Base": ("IVA", "0.080000_Base", "0.00"),
+    "IVA 8 Importe": ("IVA", "0.080000_Importe", "0.00"),
+    "IVA 16 Base": ("IVA", "0.160000_Base", "0.00"),
+    "IVA 16 Importe": ("IVA", "0.160000_Importe", "0.00"),
+
+    # IEPS also has Exento (TipoFactor Exento)
+    "IEPS Cero": ("IEPS", "Exento", "0.00"),
+    "IEPS Cero Base": ("IEPS", "Exento_Base", "0.00"),
+    "IEPS 3 Base": ("IEPS", "0.030000_Base", "0.00"),
+    "IEPS 3 Importe": ("IEPS", "0.030000_Importe", "0.00"),
+    "IEPS 6 Base": ("IEPS", "0.060000_Base", "0.00"),
+    "IEPS 6 Importe": ("IEPS", "0.060000_Importe", "0.00"),
+    "IEPS 7 Base": ("IEPS", "0.070000_Base", "0.00"),
+    "IEPS 7 Importe": ("IEPS", "0.070000_Importe", "0.00"),
+    "IEPS 8 Base": ("IEPS", "0.080000_Base", "0.00"),
+    "IEPS 8 Importe": ("IEPS", "0.080000_Importe", "0.00"),
+    "IEPS 9 Base": ("IEPS", "0.090000_Base", "0.00"),
+    "IEPS 9 Importe": ("IEPS", "0.090000_Importe", "0.00"),
+    # Example, confirm actual rates
+    "IEPS 25 Base": ("IEPS", "0.250000_Base", "0.00"),
+    "IEPS 25 Importe": ("IEPS", "0.250000_Importe", "0.00"),
+    "IEPS 26.5 Base": ("IEPS", "0.265000_Base", "0.00"),
+    "IEPS 26.5 Importe": ("IEPS", "0.265000_Importe", "0.00"),
+    "IEPS 30 Base": ("IEPS", "0.300000_Base", "0.00"),
+    "IEPS 30 Importe": ("IEPS", "0.300000_Importe", "0.00"),
+    "IEPS 30.4 Base": ("IEPS", "0.304000_Base", "0.00"),
+    "IEPS 30.4 Importe": ("IEPS", "0.304000_Importe", "0.00"),
+    # Example, confirm actual rates
+    "IEPS 50 Base": ("IEPS", "0.500000_Base", "0.00"),
+    "IEPS 50 Importe": ("IEPS", "0.500000_Importe", "0.00"),
+    "IEPS 53 Base": ("IEPS", "0.530000_Base", "0.00"),
+    "IEPS 53 Importe": ("IEPS", "0.530000_Importe", "0.00"),
+    "IEPS 160 Base": ("IEPS", "1.600000_Base", "0.00"),
+    "IEPS 160 Importe": ("IEPS", "1.600000_Importe", "0.00"),
+
+    # RetencionesDR
+    # Assuming 1.25% for ISR
+    "Ret ISR 1.25 Base": ("ISR", "0.012500_Base", "0.00"),
+    "Ret ISR 1.25 Importe": ("ISR", "0.012500_Importe", "0.00"),
+    # Assuming 10% for ISR
+    "Ret ISR 10 Base": ("ISR", "0.100000_Base", "0.00"),
+    "Ret ISR 10 Importe": ("ISR", "0.100000_Importe", "0.00"),
+
+    "Ret IVA 4 Base": ("IVA", "0.040000_Base", "0.00"),  # Assuming 4% for IVA
+    "Ret IVA 4 Importe": ("IVA", "0.040000_Importe", "0.00"),
+    # Assuming 10.667% for IVA
+    "Ret IVA 10.667 Base": ("IVA", "0.106667_Base", "0.00"),
+    "Ret IVA 10.667 Importe": ("IVA", "0.106667_Importe", "0.00"),
+    "Ret IVA 2 Base": ("IVA", "0.020000_Base", "0.00"),  # Assuming 2% for IVA
+    "Ret IVA 2 Importe": ("IVA", "0.020000_Importe", "0.00"),
+    # Assuming 5.33% for IVA
+    "Ret IVA 5.33 Base": ("IVA", "0.053333_Base", "0.00"),
+    "Ret IVA 5.33 Importe": ("IVA", "0.053333_Importe", "0.00"),
+    "Ret IVA 8 Base": ("IVA", "0.080000_Base", "0.00"),  # Assuming 8% for IVA
+    "Ret IVA 8 Importe": ("IVA", "0.080000_Importe", "0.00"),
+    "Ret IVA 6 Base": ("IVA", "0.060000_Base", "0.00"),  # Assuming 6% for IVA
+    "Ret IVA 6 Importe": ("IVA", "0.060000_Importe", "0.00"),
+    # Assuming 16% for IVA
+    "Ret IVA 16 Base": ("IVA", "0.160000_Base", "0.00"),
+    "Ret IVA 16 Importe": ("IVA", "0.160000_Importe", "0.00"),
+}
 
 
 # Define common ClaveProdServ codes for fuel (from SAT's catalog)

@@ -1,27 +1,49 @@
 # --- cfdi_processor/excel_exporter.py ---
 import pandas as pd
 import os
-from openpyxl.utils import get_column_letter  # Import for column auto-sizing
-# Import constants directly, as files are in the same directory or treated as siblings.
-from constants import INVOICE_COLUMN_ORDER, NOMINA_FIELDS_TO_EXTRACT
+# Importar los módulos de parser para acceder a sus listas de campos para el orden de columnas.
+# Asegúrate de que estos imports coincidan con los nombres de tus archivos de parser.
+# Importar órdenes de columna
+from constants import INVOICE_COLUMN_ORDER, PAGOS_COLUMN_ORDER
+from xml_parser_33 import NOMINA_FIELDS_TO_EXTRACT as NOMINA_FIELDS_33
+from xml_parser_40 import NOMINA_FIELDS_TO_EXTRACT as NOMINA_FIELDS_40
 
 
-def export_to_excel(invoice_data_list, nomina_data_list, output_file_path):
+def export_to_excel(invoice_data_list, nomina_data_list, pagos_data_list, output_file_path):
     """
-    Export list of dictionaries (one for invoices, one for nominas) to an Excel file
-    with separate sheets using Pandas.
+    Exporta listas de diccionarios (una para facturas, otra para nóminas, otra para pagos)
+    a un archivo de Excel con hojas separadas usando Pandas.
 
     Args:
-        invoice_data_list (list): A list of dictionaries for regular invoices.
-        nomina_data_list (list): List of dictionaries for nomina complement.
-        output_file_path (str): The full path where the Excel file will be saved.
+        invoice_data_list (list): Una lista de diccionarios para facturas regulares.
+        nomina_data_list (list): Lista de diccionarios para el complemento de nómina.
+        pagos_data_list (list): Lista de diccionarios para el complemento de pagos.
+        output_file_path (str): La ruta completa donde se guardará el archivo de Excel.
     """
-    if not invoice_data_list and not nomina_data_list:
-        print("No data to export. Excel file will not be created.")
+    if not invoice_data_list and not nomina_data_list and not pagos_data_list:
+        print("No hay datos para exportar. No se creará el archivo de Excel.")
         return
 
-    # Ensure output directory exists.
+    # --- LÓGICA NUEVA: Manejar letras de unidad sin subcarpeta ---
+    # Verificar si output_file_path es solo una letra de unidad (ej., "D:")
+    # Esto asume las convenciones de rutas de Windows (letra de unidad seguida de dos puntos)
+    if os.path.ismount(output_file_path) and len(output_file_path) == 2 and output_file_path[1] == ':':
+        # Si es solo una letra de unidad, añadir una subcarpeta predeterminada
+        # Por ejemplo, D: se convierte en D:\CFDI_Exports
+        output_file_path = os.path.join(
+            output_file_path, "CFDI_Exports", "CFDI_Report.xlsx")
+        print(
+            f"Advertencia: La ruta de salida era una raíz de unidad. Ajustando a: {output_file_path}")
+    # --- FIN LÓGICA NUEVA ---
+
+    # Asegurarse de que el directorio de salida exista.
+    # os.path.dirname obtiene la parte del directorio de la ruta
     output_dir = os.path.dirname(output_file_path)
+    # Si output_file_path era solo un nombre de archivo (ej., "informe.xlsx"), output_dir está vacío
+    if not output_dir:
+        # Fallback a una carpeta de informes predeterminada en el directorio de trabajo actual
+        output_dir = os.path.join(os.getcwd(), "CFDI_Processor_App", "Reports")
+
     os.makedirs(output_dir, exist_ok=True)
 
     try:
@@ -29,116 +51,118 @@ def export_to_excel(invoice_data_list, nomina_data_list, output_file_path):
             if invoice_data_list:
                 df_invoices = pd.DataFrame(invoice_data_list)
 
-                # Reorder columns according to INVOICE_COLUMN_ORDER from constants.py
-                # Add any missing columns to the DataFrame to match the order
-                for col in INVOICE_COLUMN_ORDER:
-                    if col not in df_invoices.columns:
-                        # Add missing columns as None (which becomes NaN in Pandas)
-                        df_invoices[col] = None
-                df_invoices = df_invoices[INVOICE_COLUMN_ORDER]  # Reorder
+                # Definir columnas específicas de Nómina que deben eliminarse de la hoja de Facturas.
+                # Usar ambos conjuntos de campos de Nómina para mayor seguridad.
+                nomina_cols_to_drop = [col_name for _,
+                                       _, _, col_name in NOMINA_FIELDS_33]
+                nomina_cols_to_drop.extend(
+                    [col_name for _, _, _, col_name in NOMINA_FIELDS_40])
+                nomina_cols_to_drop.extend(
+                    ['TotalGravado', 'TotalExcento', 'TotalDeducciones', 'TotalOtrosPagos'])
 
-                # Define columns specific to Nomina that should be dropped from Invoice sheet.
-                nomina_cols_to_drop = [
-                    col_name for _, _, _, col_name in NOMINA_FIELDS_TO_EXTRACT if col_name not in ["TotalGravado", "TotalExcento", "TotalDeducciones", "TotalOtrosPagos"]]
-                nomina_cols_to_drop.extend(['TotalGravado', 'TotalExcento', 'TotalDeducciones', 'TotalOtrosPagos',
-                                            'Version Nomina', 'Tipo Nomina', 'Fecha Pago', 'Fecha Inicial Pago',
-                                            'Fecha Final Pago', 'Registro Patronal', 'CURP Patron', 'RFC Patron',
-                                            'CURP', 'NSS', 'Inicio Relacion Laboral', 'Antiguedad', 'Periodicidad Pago',
-                                            'SBC', 'SDI', 'Entidad', 'Total Sueldos', 'ImpuestosRetenidos'])
-
-                # Define columns specific to ImpLocal that should be dropped from Invoice sheet if not applicable
-                implocal_cols_to_drop_from_invoices = [
+                # Definir columnas específicas de ImpLocal que deben eliminarse de la hoja de Facturas.
+                implocal_cols_to_drop = [
+                    "Total Retenciones Locales",
+                    "Total Traslados Locales",
                     "ImpLocal_TrasladosLocales_Details",
                 ]
 
-                # Drop Nomina and specific ImpLocal related columns from invoice dataframe.
-                df_invoices = df_invoices.drop(columns=[
-                                               col for col in nomina_cols_to_drop if col in df_invoices.columns], errors='ignore')
-                df_invoices = df_invoices.drop(columns=[
-                                               col for col in implocal_cols_to_drop_from_invoices if col in df_invoices.columns], errors='ignore')
-
-                # Drop the internal 'CFDI_Type' and 'Conceptos_Importe_Sum' columns as they are not for output
-                df_invoices = df_invoices.drop(
-                    columns=['CFDI_Type', 'Conceptos_Importe_Sum'], errors='ignore')
-
-                df_invoices.to_excel(
-                    writer, sheet_name='Invoices', index=False)
-
-                # --- Auto-adjust column widths for Invoices sheet ---
-                worksheet = writer.sheets['Invoices']
-                for i, col in enumerate(df_invoices.columns):
-                    max_length = 0
-                    # Account for header length
-                    max_length = max(max_length, len(str(col)))
-                    # Iterate through column to find max length of cell content
-                    for cell in worksheet.iter_cols(min_col=i+1, max_col=i+1, min_row=1):
-                        for c in cell:
-                            try:
-                                if len(str(c.value)) > max_length:
-                                    max_length = len(str(c.value))
-                            except TypeError:
-                                pass  # Handle cases where cell value is None or non-string
-                    adjusted_width = (max_length + 2)
-                    worksheet.column_dimensions[get_column_letter(
-                        i + 1)].width = adjusted_width
-                # --- End auto-adjust ---
-
-                print(
-                    f"Exported {len(invoice_data_list)} CFDI Invoices to 'Invoices' sheet.")
-            else:
-                print("No Invoice data to export.")
-
-            # Nomina Data
-            if nomina_data_list:
-                df_nominas = pd.DataFrame(nomina_data_list)
-
-                # Drop CFDI Invoice specific columns from Nomina sheet
-                invoice_only_cols_to_drop = [
-                    "Tipo", "SubTotal", "Descuento", "Total IEPS", "IVA 16%", "Retenido IVA", "Retenido ISR",
-                    "ISH", "Total", "Total Trasladados", "Total Retenidos", "Total LocalTrasladado",
-                    "Total LocalRetenido", "Tipo De Cambio", "FormaDePago", "Metodo de Pago", "NumCtaPago",
-                    "Condicion de Pago", "Conceptos", "Combustible", "IEPS 3%", "IEPS 6%", "IEPS 7%", "IEPS 8%",
-                    "IEPS 9%", "IEPS 26.5%", "IEPS 30%", "IEPS 30.4%", "IEPS 53%", "IEPS 160%", "IVA 8%", "IVA Ret 6%",
-                    "UUID Relacion", "TipoDeRelacion", "ResidenciaFiscal", "NumRegIdTrib", "DomicilioFiscalReceptor",
-                    "Exportacion",
-                    "Verificado ó Asoc.", "Estado SAT", "EstadoPago",
-                    "Direccion Emisor", "Localidad Emisor", "Direccion Receptor", "Localidad Receptor",
-                    "UsoCFDI", "RegimenFiscalReceptor"
+                # Definir columnas específicas de Pagos que deben eliminarse de la hoja de Facturas.
+                # Estas son columnas que solo tienen sentido en la hoja de Pagos.
+                pagos_cols_to_drop = [
+                    "Version Pago", "TotalRetencionesIVA", "TotalRetencionesISR", "TotalRetencionesIEPS",
+                    "TotalTrasladosBaseIVA16", "TotalTrasladosImpuestoIVA16", "TotalTrasladosBaseIVA8",
+                    "TotalTrasladosImpuestoIVA8", "TotalTrasladosBaseIVA0", "TotalTrasladosImpuestoIVA0",
+                    "TotalTrasladadoBaseIVAExento", "MontoTotalPagos", "FechaPago", "FormaDePagoP",
+                    "MonedaP", "TipoCambioP", "Monto Pago", "NumOperacion", "RFCEmisorCtaOrd",
+                    "NombreBancoOrdExt", "CtaOrdenante", "RFCEmisorCTABen", "CtaBeneficiario",
+                    "TipoCadPago", "CertPago", "CadPago", "SelloPago", "IdDocumento Relacionado",
+                    "Serie Relacionada", "Folio Relacionado", "MonedaDR", "TipoCambioDR",
+                    "EquivalenciaDR", "MetodoDePagoDR", "NumParcialidad", "ImpSaldoAnt",
+                    "ImpPagado", "ImpSaldoInsoluto", "ObjetoImpDR", "IVA Excento", "IVA Excento Base",
+                    "IVA Cero", "IVA Cero Base", "IVA 8 Base", "IVA 8 Importe", "IVA 16 Base",
+                    "IVA 16 Importe", "IEPS Cero", "IEPS Cero Base", "IEPS 3 Base", "IEPS 3 Importe",
+                    "IEPS 6 Base", "IEPS 6 Importe", "IEPS 7 Base", "IEPS 7 Importe", "IEPS 8 Base",
+                    "IEPS 8 Importe", "IEPS 9 Base", "IEPS 9 Importe", "IEPS 25 Base", "IEPS 25 Importe",
+                    "IEPS 26.5 Base", "IEPS 26.5 Importe", "IEPS 30 Base", "IEPS 30 Importe",
+                    "IEPS 30.4 Base", "IEPS 30.4 Importe", "IEPS 50 Base", "IEPS 50 Importe",
+                    "IEPS 53 Base", "IEPS 53 Importe", "IEPS 160 Base", "IEPS 160 Importe",
+                    "Ret ISR 1.25 Base", "Ret ISR 1.25 Importe", "Ret ISR 10 Base", "Ret ISR 10 Importe",
+                    "Ret IVA 4 Base", "Ret IVA 4 Importe", "Ret IVA 10.667 Base", "Ret IVA 10.667 Importe",
+                    "Ret IVA 2 Base", "Ret IVA 2 Importe", "Ret IVA 5.33 Base", "Ret IVA 5.33 Importe",
+                    "Ret IVA 8 Base", "Ret IVA 8 Importe", "Ret IVA 6 Base", "Ret IVA 6 Importe",
+                    "Ret IVA 16 Base", "Ret IVA 16 Importe",
+                    # También las columnas de RFC/Nombre/Regimen/Domicilio que son específicas de Pagos
+                    "RFC Emisor CFDI", "Nombre Emisor CFDI", "Regimen Fiscal Emisor CFDI",
+                    "Lugar de Expedicion CFDI", "RFC Receptor CFDI", "Nombre Receptor CFDI",
+                    "Regimen Fiscal Receptor CFDI", "DomicilioFiscalReceptor CFDI",
+                    "ResidenciaFiscal CFDI", "NumRegIdTrib CFDI", "UsoCFDI CFDI",
+                    "Version CFDI", "TipoComprobante", "Serie CFDI", "Folio CFDI", "UUID CFDI",
+                    "No. Certificado Emisor", "No. Certificado SAT"
                 ]
 
-                # Drop the internal 'CFDI_Type' and 'Conceptos_Importe_Sum' columns
-                df_nominas = df_nominas.drop(columns=[
-                    col for col in invoice_only_cols_to_drop if col in df_nominas.columns], errors='ignore')
-                df_nominas = df_nominas.drop(columns=[
-                    'CFDI_Type', 'Conceptos_Importe_Sum', "ImpLocal_TrasladosLocales_Details"], errors='ignore')
+                # Combinar todas las columnas a eliminar de la hoja de Facturas
+                all_cols_to_drop_from_invoices = list(
+                    set(nomina_cols_to_drop + implocal_cols_to_drop + pagos_cols_to_drop))
 
-                df_nominas.to_excel(writer, sheet_name='Nomina', index=False)
+                # Eliminar las columnas específicas de nómina, implocal y pagos del dataframe de facturas.
+                df_invoices = df_invoices.drop(columns=[
+                                               col for col in all_cols_to_drop_from_invoices if col in df_invoices.columns], errors='ignore')
 
-                # --- Auto-adjust column widths for Nomina sheet ---
-                worksheet = writer.sheets['Nomina']
-                for i, col in enumerate(df_nominas.columns):
-                    max_length = 0
-                    # Account for header length
-                    max_length = max(max_length, len(str(col)))
-                    # Iterate through column to find max length of cell content
-                    for cell in worksheet.iter_cols(min_col=i+1, max_col=i+1, min_row=1):
-                        for c in cell:
-                            try:
-                                if len(str(c.value)) > max_length:
-                                    max_length = len(str(c.value))
-                            except TypeError:
-                                pass  # Handle cases where cell value is None or non-string
-                    adjusted_width = (max_length + 2)
-                    worksheet.column_dimensions[get_column_letter(
-                        i + 1)].width = adjusted_width
-                # --- End auto-adjust ---
+                # Reordenar las columnas de facturas según INVOICE_COLUMN_ORDER
+                df_invoices = df_invoices[INVOICE_COLUMN_ORDER].copy()
 
+                # Eliminar la columna de tipo interno.
+                df_invoices = df_invoices.drop(
+                    columns=['CFDI_Type'], errors='ignore')
+                df_invoices.to_excel(
+                    writer, sheet_name='Invoices', index=False)
                 print(
-                    f"Exported {len(nomina_data_list)} CFDI Nomina complements to 'Nomina' sheet.")
+                    f"Exportadas {len(invoice_data_list)} facturas CFDI regulares a la hoja 'Invoices'.")
             else:
-                print("No Nomina data to export.")
-        print(f"\nSuccessfully exported data to Excel: {output_file_path}")
+                print("No hay datos de Facturas para exportar.")
+
+            # Nomina 1.2
+            if nomina_data_list:
+                df_nominas = pd.DataFrame(nomina_data_list)
+                # Eliminar columnas específicas de ImpLocal y Pagos del dataframe de Nómina si están presentes.
+                # Esto hace que la hoja de Nómina sea más limpia.
+                implocal_and_pagos_cols_to_drop = list(
+                    set(implocal_cols_to_drop + pagos_cols_to_drop))
+                df_nominas = df_nominas.drop(columns=[
+                    col for col in implocal_and_pagos_cols_to_drop if col in df_nominas.columns], errors='ignore')
+                df_nominas = df_nominas.drop(
+                    columns=['CFDI_Type'], errors='ignore')
+                df_nominas.to_excel(
+                    writer, sheet_name='Nomina', index=False)
+                print(
+                    f"Exportados {len(nomina_data_list)} complementos de Nómina CFDI 1.2 a la hoja 'Nomina'.")
+            else:
+                print("No hay datos de Nómina para exportar.")
+
+            # Pagos 2.0
+            if pagos_data_list:
+                df_pagos = pd.DataFrame(pagos_data_list)
+                # Eliminar columnas específicas de Facturas y Nómina del dataframe de Pagos si están presentes.
+                invoice_and_nomina_cols_to_drop = list(
+                    set(INVOICE_COLUMN_ORDER + nomina_cols_to_drop))
+                df_pagos = df_pagos.drop(columns=[
+                    col for col in invoice_and_nomina_cols_to_drop if col in df_pagos.columns], errors='ignore')
+
+                # Reordenar las columnas de pagos según PAGOS_COLUMN_ORDER
+                df_pagos = df_pagos[PAGOS_COLUMN_ORDER].copy()
+
+                df_pagos = df_pagos.drop(
+                    columns=['CFDI_Type'], errors='ignore')
+                df_pagos.to_excel(
+                    writer, sheet_name='Pagos', index=False)
+                print(
+                    f"Exportados {len(pagos_data_list)} complementos de Pagos CFDI 2.0 a la hoja 'Pagos'.")
+            else:
+                print("No hay datos de Pagos para exportar.")
+
+        print(f"\nDatos exportados exitosamente a Excel: {output_file_path}")
 
     except Exception as e:
-        print(f"Error exporting to Excel: {e}")
-        print("Please ensure 'openpyxl' is installed (pip install openpyxl) and the output path is valid.")
+        print(f"Error al exportar a Excel: {e}")
+        print("Por favor, asegúrate de que 'openpyxl' esté instalado (pip install openpyxl) y la ruta de salida sea válida.")
