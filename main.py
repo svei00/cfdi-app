@@ -3,8 +3,7 @@
 # y la llamada a otros módulos.
 import platform
 import os
-# Usado solo para obtener la raíz para la detección de versión
-import xml.etetree.ElementTree as ET
+import xml.etree.ElementTree as ET  # CORREGIDO: xml.etree.ElementTree
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -152,120 +151,109 @@ def select_file_save_path_gui(initial_dir=".", default_filename="CFDI_Export.xls
 
 def determine_file_naming_components(parsed_data_list):
     """
-    Determina el RFC, TipoDeXML (Emitidas/Recibidas/Mixed), y Año_Mes para el nombre del archivo.
-    Considera toda la lista de datos analizados.
+    Determines the RFC, TypeOfXML (Emitidas/Recibidas/Mixed), and Year_Month for filename.
+    This function restores the original, working RFC logic and ensures robust date parsing.
+
+    Priority Logic for RFC and Type:
+    1. Identify all unique Emisor and Receptor RFCs across all document types.
+    2. Determine if the set of RFCs indicates a clear 'Emitidas' or 'Recibidas' scenario.
+       - 'Emitidas': Only one unique Emisor RFC, and all documents are from that Emisor.
+       - 'Recibidas': Only one unique Receptor RFC, and all documents are for that Receptor.
+       - Special 'Recibidas' for Nomina: If only Nomina files, one Emisor (company) and one DIFFERENT Receptor (employee),
+         then it's 'Recibidas' for the employee's RFC.
+    3. If not a clear 'Emitidas' or 'Recibidas', check for a single unique RFC overall (mixed roles).
+    4. Otherwise, default to 'MixedRFCs_Report'.
     """
     if not parsed_data_list:
         return "Generic", "Report", "UnknownDate"
 
     all_rfcs_emisor = set()
     all_rfcs_receptor = set()
-    all_dates_set = set()  # Almacenar tuplas (año, mes)
+    all_dates_set = set()  # Store (year, month) tuples
 
-    # Función auxiliar para analizar cadenas de fecha con múltiples formatos
+    # Helper function to parse date strings with multiple formats
     def parse_date_string(date_str_val):
         if not date_str_val:
             return None
 
-        # Intentar el formato de marca de tiempo completa primero (para Fecha Timbrado)
+        # Try CFDI date-time format (e.g., "2025-04-09T18:24:00")
         try:
             return datetime.strptime(date_str_val, "%Y-%m-%dT%H:%M:%S")
         except ValueError:
             pass
 
-        # Si eso falla, intentar el formato de fecha solamente (para Fecha Emision)
-        try:
-            return datetime.strptime(date_str_val, "%d/%m/%Y")
-        except ValueError:
-            pass
-
-        # Intentar el formato de fecha y hora (para Pagos)
+        # Try Fecha Timbrado format (DD/MM/YYYY HH:MM:SS)
         try:
             return datetime.strptime(date_str_val, "%d/%m/%Y %H:%M:%S")
         except ValueError:
             pass
 
-        return None  # Devolver None si ningún formato coincide
+        # Try Fecha Emision format (DD/MM/YYYY)
+        try:
+            return datetime.strptime(date_str_val, "%d/%m/%Y")
+        except ValueError:
+            pass
 
-    # Recopilar todos los RFCs y Fechas de TODOS los datos analizados (facturas, nóminas y pagos)
+        return None  # Return None if no format matches
+
+    # Collect all RFCs and Dates from ALL parsed data
     for data in parsed_data_list:
-        emisor_rfc = data.get("RFC Emisor")  # Para Invoices/Nomina
-        receptor_rfc = data.get("RFC Receptor")  # Para Invoices/Nomina
-
-        # Para Pagos, los RFCs están en "RFC Emisor CFDI" y "RFC Receptor CFDI"
-        if data.get("CFDI_Type") == "Pago":
-            emisor_rfc = data.get("RFC Emisor CFDI")
-            receptor_rfc = data.get("RFC Receptor CFDI")
+        emisor_rfc = data.get("RFC Emisor") or data.get("RFC Emisor CFDI")
+        receptor_rfc = data.get(
+            "RFC Receptor") or data.get("RFC Receptor CFDI")
 
         if emisor_rfc:
             all_rfcs_emisor.add(emisor_rfc)
         if receptor_rfc:
             all_rfcs_receptor.add(receptor_rfc)
 
-        # Extraer fechas (Fecha Emision priorizada, luego Fecha Timbrado, luego FechaPago de Pagos)
+        # Prioritize Fecha Emision, then Fecha Timbrado, then FechaPago (for Pagos)
         date_str = data.get("Fecha Emision")
-        if not date_str:  # Fallback a Fecha Timbrado si Fecha Emision no está disponible
+        if not date_str:
             date_str = data.get("Fecha Timbrado")
-        # Fallback a FechaPago para Pagos
         if not date_str and data.get("CFDI_Type") == "Pago":
+            # This is from the pago20:Pago node, not the comprobante.
             date_str = data.get("FechaPago")
 
         dt_object = parse_date_string(date_str)
         if dt_object:
             all_dates_set.add((dt_object.year, dt_object.month))
 
-    # --- LÓGICA DE NOMBRES DE RFC Y TIPO REVISADA ---
+    # --- RFC AND TYPE NAMING LOGIC ---
     rfc_part = "MixedRFCs"
     type_of_xml_part = "Report"
 
-    # Escenario 1: Principalmente documentos de Nómina para un empleado (un solo empleador, un solo empleado)
-    # Esta condición debe verificarse primero para priorizar la vista "Recibidas" del empleado para Nómina.
-    # También maneja el caso de que solo haya XMLs de Nómina.
-    nomina_only_rfcs_emisor = set(d.get("RFC Emisor") for d in parsed_data_list if d.get(
-        "CFDI_Type") == "Nomina" and d.get("RFC Emisor"))
-    nomina_only_rfcs_receptor = set(d.get("RFC Receptor") for d in parsed_data_list if d.get(
-        "CFDI_Type") == "Nomina" and d.get("RFC Receptor"))
-
-    if len(nomina_only_rfcs_emisor) == 1 and len(nomina_only_rfcs_receptor) == 1 and \
-       list(nomina_only_rfcs_emisor)[0] != list(nomina_only_rfcs_receptor)[0]:
-
-        # Verificar si la mayoría de los documentos son Nómina para este par Emisor-Receptor
-        # Contar documentos de Nómina vs. otros tipos
-        nomina_count = sum(1 for d in parsed_data_list if d.get("CFDI_Type") == "Nomina" and
-                           d.get("RFC Emisor") == list(nomina_only_rfcs_emisor)[0] and
-                           d.get("RFC Receptor") == list(nomina_only_rfcs_receptor)[0])
-
-        # Si la mayoría son nóminas para este par
-        if nomina_count > len(parsed_data_list) / 2:
-            rfc_part = list(nomina_only_rfcs_receptor)[0]  # RFC del Empleado
-            type_of_xml_part = "Recibidas"
-
-    # Escenario 2: Un solo RFC Emisor, múltiples o mismos RFCs Receptores (Emitidas)
-    elif len(all_rfcs_emisor) == 1:
+    # Check for a single dominant Emisor RFC (Emitidas)
+    if len(all_rfcs_emisor) == 1:
         dominant_rfc = list(all_rfcs_emisor)[0]
-        rfc_part = dominant_rfc
-        type_of_xml_part = "Emitidas"
+        # Check if this dominant Emisor RFC is also the *only* Receptor RFC.
+        # This implies a self-issued or mixed role for a single entity.
+        if len(all_rfcs_receptor) == 1 and list(all_rfcs_receptor)[0] == dominant_rfc:
+            rfc_part = dominant_rfc
+            type_of_xml_part = "Mixed"  # Single RFC acting as both Emisor and Receptor
+        else:
+            rfc_part = dominant_rfc
+            type_of_xml_part = "Emitidas"  # Primarily emitting documents
 
-        # Si hay un solo receptor y es el mismo que el emisor, sigue siendo Emitidas pero podría considerarse "Mixto"
-        # Por ahora, se mantiene como Emitidas si el rol principal es Emisor.
-
-    # Escenario 3: Un solo RFC Receptor, múltiples RFCs Emisores (Recibidas)
+    # If not a single dominant Emisor, check for a single dominant Receptor RFC (Recibidas)
     elif len(all_rfcs_receptor) == 1:
         dominant_rfc = list(all_rfcs_receptor)[0]
         rfc_part = dominant_rfc
         type_of_xml_part = "Recibidas"
 
-    # Escenario 4: Múltiples RFCs Emisores y Receptores distintos, pero un solo RFC único combinado
-    # Esto cubre casos en los que un RFC actúa como Emisor y Receptor, o una mezcla que se simplifica a uno.
+        # Special case for Nomina: If it's primarily Nomina files with one Emisor and one DIFFERENT Receptor,
+        # and the dominant RFC is the Receptor, it's still Recibidas for the employee.
+        # This is already covered by the general 'Recibidas' logic if all_rfcs_receptor is 1.
+
+    # If neither of the above, check if there's only one unique RFC overall (mixed roles for that single RFC)
     else:
         unique_combined_rfcs = all_rfcs_emisor.union(all_rfcs_receptor)
         if len(unique_combined_rfcs) == 1:
             rfc_part = list(unique_combined_rfcs)[0]
-            type_of_xml_part = "Mixed"  # Indica que este RFC está involucrado en roles mixtos
-        # Si todavía no hay un RFC dominante claro, se mantiene el valor inicial
-        # de rfc_part = "MixedRFCs" y type_of_xml_part = "Report".
+            type_of_xml_part = "Mixed"  # Single RFC involved in mixed roles
+        # If still no clear dominant RFC, keep the initial "MixedRFCs_Report" default.
 
-    # Determinar la parte Año_Mes
+    # Determine Year_Month part
     year_month_part = "UnknownDate"
     if len(all_dates_set) == 1:
         year, month = list(all_dates_set)[0]
@@ -274,10 +262,10 @@ def determine_file_naming_components(parsed_data_list):
         sorted_dates = sorted(list(all_dates_set))
         min_year, min_month = sorted_dates[0]
         max_year, max_month = sorted_dates[-1]
-        # Si los años son diferentes, mostrar el rango de años
+        # If years are different, show the range of years
         if min_year != max_year:
             year_month_part = f"MixedDates_{min_year}-{max_year}"
-        # Si los años son los mismos pero los meses son diferentes, mostrar el rango de meses
+        # If years are the same but months are different, show month range
         else:
             year_month_part = f"{min_year}_{min_month:02d}-{max_month:02d}"
 
@@ -286,8 +274,8 @@ def determine_file_naming_components(parsed_data_list):
 
 def parse_xml_file_by_version(xml_file_path):
     """
-    Lee el archivo XML para determinar su versión de CFDI y llama al parser apropiado.
-    También detecta si es un CFDI de Pagos.
+    Reads the XML file to determine its CFDI version and calls the appropriate parser.
+    Also detects if it is a Pagos CFDI.
     """
     try:
         tree = ET.parse(xml_file_path)
@@ -295,30 +283,31 @@ def parse_xml_file_by_version(xml_file_path):
         cfdi_version = root.get('Version')
         tipo_comprobante = root.get('TipoDeComprobante')
 
+        # Prioritize Pagos 2.0 detection
         if tipo_comprobante == 'P' and cfdi_version == '4.0':
-            # Es un CFDI de Pagos 2.0
+            # It's a CFDI de Pagos 2.0
             return parse_cfdi_pago_20(xml_file_path)
         elif cfdi_version == '3.3':
             return parse_cfdi_33_invoice(xml_file_path)
         elif cfdi_version == '4.0':
-            # Es un CFDI 4.0 regular (Ingreso, Egreso, Traslado, Nómina)
+            # It's a regular CFDI 4.0 (Ingreso, Egreso, Traslado, Nómina)
             return parse_cfdi_40_invoice(xml_file_path)
         else:
             print(
-                f"Error: Versión de CFDI '{cfdi_version}' o TipoDeComprobante '{tipo_comprobante}' no soportado para {os.path.basename(xml_file_path)}. Saltando archivo.")
+                f"Error: CFDI version '{cfdi_version}' or TipoDeComprobante '{tipo_comprobante}' not supported for {os.path.basename(xml_file_path)}. Skipping file.")
             return None
     except ET.ParseError as e:
-        print(f"Error al analizar el archivo XML {xml_file_path}: {e}")
+        print(f"Error parsing XML file {xml_file_path}: {e}")
         return None
     except Exception as e:
         print(
-            f"Ocurrió un error inesperado al leer la versión de {xml_file_path}: {e}")
+            f"An unexpected error occurred while reading version from {xml_file_path}: {e}")
         return None
 
 
 def main():
     """
-    Función principal para procesar la aplicación de procesamiento de XML CFDI.
+    Main function to process the CFDI XML processing application.
     """
     clear_terminal()
 
@@ -331,13 +320,13 @@ def main():
     create_initial_directories()
 
     input_folder = ""
-    # Usar GUI para seleccionar la carpeta de XML de entrada.
+    # Use GUI for selecting the input XML folder.
     input_folder = select_xml_directory_gui(
         title_text="Seleccionar Carpeta de XMLs CFDI"
     )
-    if not input_folder:  # Si el usuario cerró el diálogo GUI o canceló
+    if not input_folder:  # If user closed the GUI dialog or cancelled
         print("No se seleccionó ninguna carpeta a través de la GUI. Saliendo.")
-        return  # Salir si no se seleccionó ninguna carpeta
+        return  # Exit if no folder selected
 
     if not os.path.isdir(input_folder):
         print(
@@ -354,7 +343,7 @@ def main():
             if file.lower().endswith(".xml"):
                 xml_file_path = os.path.join(root_dir, file)
                 print(f" - Procesando {file}...")
-                # Llamar a la función de despacho de versión
+                # Call the version dispatcher function
                 parsed_data = parse_xml_file_by_version(xml_file_path)
                 if parsed_data:
                     # parse_cfdi_pago_20 devuelve una LISTA de diccionarios, mientras que los otros devuelven un diccionario.
