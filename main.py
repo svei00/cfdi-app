@@ -157,10 +157,10 @@ def determine_file_naming_components(parsed_data_list):
     Priority Logic for RFC and Type:
     1. Identify all unique Emisor and Receptor RFCs across all document types.
     2. Determine if the set of RFCs indicates a clear 'Emitidas' or 'Recibidas' scenario.
-       - 'Emitidas': Only one unique Emisor RFC, and all documents are from that Emisor.
-       - 'Recibidas': Only one unique Receptor RFC, and all documents are for that Receptor.
-       - Special 'Recibidas' for Nomina: If only Nomina files, one Emisor (company) and one DIFFERENT Receptor (employee),
-         then it's 'Recibidas' for the employee's RFC.
+        - 'Emitidas': Only one unique Emisor RFC, and all documents are from that Emisor.
+        - 'Recibidas': Only one unique Receptor RFC, and all documents are for that Receptor.
+        - Special 'Recibidas' for Nomina: If only Nomina files, one Emisor (company) and one DIFFERENT Receptor (employee),
+          then it's 'Recibidas' for the employee's RFC.
     3. If not a clear 'Emitidas' or 'Recibidas', check for a single unique RFC overall (mixed roles).
     4. Otherwise, default to 'MixedRFCs_Report'.
     """
@@ -223,35 +223,37 @@ def determine_file_naming_components(parsed_data_list):
     rfc_part = "MixedRFCs"
     type_of_xml_part = "Report"
 
-    # Check for a single dominant Emisor RFC (Emitidas)
-    if len(all_rfcs_emisor) == 1:
-        dominant_rfc = list(all_rfcs_emisor)[0]
-        # Check if this dominant Emisor RFC is also the *only* Receptor RFC.
-        # This implies a self-issued or mixed role for a single entity.
-        if len(all_rfcs_receptor) == 1 and list(all_rfcs_receptor)[0] == dominant_rfc:
-            rfc_part = dominant_rfc
-            type_of_xml_part = "Mixed"  # Single RFC acting as both Emisor and Receptor
-        else:
-            rfc_part = dominant_rfc
-            type_of_xml_part = "Emitidas"  # Primarily emitting documents
-
-    # If not a single dominant Emisor, check for a single dominant Receptor RFC (Recibidas)
-    elif len(all_rfcs_receptor) == 1:
-        dominant_rfc = list(all_rfcs_receptor)[0]
-        rfc_part = dominant_rfc
+    # LÓGICA CORREGIDA: PRIORIZAR EL CASO DE NÓMINA ÚNICA
+    # Si todos los archivos son de tipo "Nomina" y hay un único RFC Receptor,
+    # el reporte es "Recibidas" para ese RFC.
+    is_all_nomina = all(d.get("CFDI_Type") ==
+                        "Nomina" for d in parsed_data_list)
+    if is_all_nomina and len(all_rfcs_receptor) == 1:
+        rfc_part = list(all_rfcs_receptor)[0]
         type_of_xml_part = "Recibidas"
-
-        # Special case for Nomina: If it's primarily Nomina files with one Emisor and one DIFFERENT Receptor,
-        # and the dominant RFC is the Receptor, it's still Recibidas for the employee.
-        # This is already covered by the general 'Recibidas' logic if all_rfcs_receptor is 1.
-
-    # If neither of the above, check if there's only one unique RFC overall (mixed roles for that single RFC)
+    # Si no es un caso de Nómina única, usar la lógica general
     else:
-        unique_combined_rfcs = all_rfcs_emisor.union(all_rfcs_receptor)
-        if len(unique_combined_rfcs) == 1:
-            rfc_part = list(unique_combined_rfcs)[0]
-            type_of_xml_part = "Mixed"  # Single RFC involved in mixed roles
-        # If still no clear dominant RFC, keep the initial "MixedRFCs_Report" default.
+        # Check for a single dominant Emisor RFC (Emitidas)
+        if len(all_rfcs_emisor) == 1:
+            dominant_rfc = list(all_rfcs_emisor)[0]
+            # Check if this dominant Emisor RFC is also the *only* Receptor RFC.
+            if len(all_rfcs_receptor) == 1 and list(all_rfcs_receptor)[0] == dominant_rfc:
+                rfc_part = dominant_rfc
+                type_of_xml_part = "Mixed"
+            else:
+                rfc_part = dominant_rfc
+                type_of_xml_part = "Emitidas"
+        # If not a single dominant Emisor, check for a single dominant Receptor RFC (Recibidas)
+        elif len(all_rfcs_receptor) == 1:
+            dominant_rfc = list(all_rfcs_receptor)[0]
+            rfc_part = dominant_rfc
+            type_of_xml_part = "Recibidas"
+        # If neither of the above, check if there's only one unique RFC overall (mixed roles for that single RFC)
+        else:
+            unique_combined_rfcs = all_rfcs_emisor.union(all_rfcs_receptor)
+            if len(unique_combined_rfcs) == 1:
+                rfc_part = list(unique_combined_rfcs)[0]
+                type_of_xml_part = "Mixed"
 
     # Determine Year_Month part
     year_month_part = "UnknownDate"
