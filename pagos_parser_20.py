@@ -224,6 +224,7 @@ def parse_cfdi_pago_20(xml_file_path):
             base_cfdi_data["Nombre Receptor CFDI"] = receptor_node.get(
                 "Nombre", "").strip()
             uso_cfdi_code = receptor_node.get("UsoCFDI", "").strip()
+            # This line already existed and correctly extracts the UsoCFDI
             base_cfdi_data["UsoCFDI CFDI"] = f"{uso_cfdi_code} - {USO_CFDI_MAP.get(uso_cfdi_code, 'Desconocido')}" if uso_cfdi_code else None
             base_cfdi_data["DomicilioFiscalReceptor CFDI"] = receptor_node.get(
                 'DomicilioFiscalReceptor', '').strip()
@@ -322,6 +323,11 @@ def parse_cfdi_pago_20(xml_file_path):
                         row_data[key] = value
 
                 # Extract data from the current pago20:DoctoRelacionado element
+                # --- MODIFICATION START ---
+                # Add the MetodoDePagoDR field, which was not previously being extracted.
+                row_data["MetodoDePagoDR"] = docto_relacionado_node.get(
+                    "MetodoDePagoDR", "").strip()
+                # --- MODIFICATION END ---
                 for _, attr_name, default_val, col_name in PAGO_DR_FIELDS_TO_EXTRACT:
                     if col_name in PAGOS_COLUMN_ORDER and attr_name in docto_relacionado_node.attrib:
                         value_str = docto_relacionado_node.get(
