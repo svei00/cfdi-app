@@ -7,6 +7,10 @@ import xml.etree.ElementTree as ET  # CORREGIDO: xml.etree.ElementTree
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox
+import subprocess
+import zipfile
+import tempfile
+import shutil
 
 # Importar parsers específicos basados en la versión del CFDI
 from xml_parser_33 import parse_cfdi_33_invoice
@@ -273,6 +277,30 @@ def determine_file_naming_components(parsed_data_list):
 
     return rfc_part, type_of_xml_part, year_month_part
 
+# --- INSERT THE ZIP FUNCTION ---
+def process_zip_file(zip_path):
+    """Extracts XMLs from a zip to a temp folder and processes them."""
+    temp_dir = tempfile.mkdtemp()
+    extracted_data = []
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        for root_dir, _, files in os.walk(temp_dir):
+            for file in files:
+                if file.lower().endswith(".xml"):
+                    xml_path = os.path.join(root_dir, file)
+                    data = parse_xml_file_by_version(xml_path)
+                    if data:
+                        # Account for Pagos returning a list
+                        if isinstance(data, list):
+                            extracted_data.extend(data)
+                        else:
+                            extracted_data.append(data)
+    finally:
+        shutil.rmtree(temp_dir) # Clean up temp files
+    return extracted_data
+
 
 def parse_xml_file_by_version(xml_file_path):
     """
@@ -359,6 +387,13 @@ def main():
                 else:
                     error_count += 1
 
+            # Add the zip function
+            elif file.lower().endswith(".zip"):
+                print(f" - Unzipping and processing {file}...")
+                zip_results = process_zip_file(file_path)
+                all_parsed_data.extend(zip_results)
+                processed_count += len(zip_results)    
+
     if not all_parsed_data:
         print("No se procesaron archivos XML CFDI válidos. Por favor, verifica el directorio y los formatos de archivo.")
         return
@@ -401,6 +436,15 @@ def main():
 
     print(f"\nProcesamiento completado. Revisa la carpeta de salida para tu informe de Excel.")
     print(f"Salida guardada en: {excel_output_path}")
+
+    # --- OPEN FILE PROMPT ---
+    if messagebox.askyesno("Proceso Completado", "¿Deseas abrir el reporte de Excel ahora?"):
+        if platform.system() == "Windows":
+            os.startfile(excel_output_path)
+        else:
+            # For macOS/Linux
+            opener = "open" if platform.system() == "Darwin" else "xdg-open"
+            subprocess.call([opener, excel_output_path])
 
 
 if __name__ == "__main__":
