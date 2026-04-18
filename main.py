@@ -370,8 +370,10 @@ def main():
     print(f"\nEscaneando directorio: {input_folder}")
     for root_dir, _, files in os.walk(input_folder):
         for file in files:
+            # --- THE FIX: Define path here so it is available to BOTH the if and elif blocks ---
+            xml_file_path = os.path.join(root_dir, file)
+
             if file.lower().endswith(".xml"):
-                xml_file_path = os.path.join(root_dir, file)
                 print(f" - Procesando {file}...")
                 # Call the version dispatcher function
                 parsed_data = parse_xml_file_by_version(xml_file_path)
@@ -390,9 +392,12 @@ def main():
             # Add the zip function
             elif file.lower().endswith(".zip"):
                 print(f" - Unzipping and processing {file}...")
-                zip_results = process_zip_file(file_path)
-                all_parsed_data.extend(zip_results)
-                processed_count += len(zip_results)    
+                # Use xml_file_path because that is what your os.path.join uses
+                # Note: Added logic to handle compressed files automatically
+                zip_results = process_zip_file(xml_file_path) 
+                if zip_results:
+                    all_parsed_data.extend(zip_results)
+                    processed_count += len(zip_results)   
 
     if not all_parsed_data:
         print("No se procesaron archivos XML CFDI válidos. Por favor, verifica el directorio y los formatos de archivo.")
