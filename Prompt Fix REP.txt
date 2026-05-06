@@ -1,0 +1,13 @@
+Fix CFDI de Pago (REP) export to be one row per payment node, not one per REP.
+
+Currently the script emits a single row per complemento de Pago 2.0, keeping only the first Pago element. A REP can contain several Pago nodes, and each Pago can relate to several DoctoRelacionado. SAT's prellenado attributes each payment to the month of that payment's FechaPago, so collapsing to the first node misdates and undercounts.
+
+Required output: one row per Pago node (if you also need per-invoice detail, one row per DoctoRelacionado). Each row must include:
+
+UUID (TimbreFiscalDigital of the REP) — repeated across its nodes
+FechaPago ← from this Pago node's FechaPago attribute (ISO YYYY-MM-DDTHH:MM:SS)
+FormaDePagoP, MonedaP, TipoCambioP, Monto (this node's payment amount)
+From this node's ImpuestosP / TrasladoP (and RetencionP): BaseP, TipoFactorP, TasaOCuotaP, ImporteP — split into columns per rate: Base IVA 16% / IVA 16%, Base IVA 8% / IVA 8%, Base IVA 0%, Base Exento, IVA Ret, ISR Ret
+ImpPagado for the row = this node's payment portion (not the REP total)
+The related invoice fields if going to DoctoRelacionado level: IdDocumento (UUID factura), NumParcialidad, ImpSaldoAnt, ImpPagado, ImpSaldoInsoluto
+Do not aggregate or dedupe across nodes. Sum happens downstream in Excel by FechaPago month. Keep the column headers stable and exactly matching the current sheet so the table formulas keep working.
