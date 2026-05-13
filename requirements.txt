@@ -1,0 +1,8 @@
+# CFDI Processor - runtime dependencies
+# Install with: pip install -r requirements.txt
+#
+# Parsing uses xml.etree.ElementTree (Python stdlib) - no dependency needed.
+# The GUI (PySide6) will be added here when the GUI step begins.
+
+pandas>=2.0
+openpyxl>=3.1

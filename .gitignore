@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# CFDI app data - never commit real fiscal data / generated reports
+CFDI_Processor_App/Boveda_XMLs/
+CFDI_Processor_App/Reports/
+AdminXML/
+*.xlsx
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# SECURITY: never commit credentials (FIEL / e.firma / CIEC)
+*.cer
+*.key
+*.pfx
+credentials*

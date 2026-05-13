@@ -75,14 +75,43 @@ hard architectural boundary, like the version-parser isolation.
 
 ## Known issues to fix later (do NOT fix unless asked)
 - Hard-coded relative base path (`../../AdminXML`) — will become a user-chosen /
-  default directory once the GUI exists.
+  default directory once the GUI exists. See "Planned: working directory &
+  auto-organization" below.
 - `excel_exporter.py` repeats the column-autosize loop 3× — candidate for a helper.
-- No persistence (re-parses every run), no tests, no requirements file yet.
+- No persistence (re-parses every run).
+- Test coverage gap: `tests/` only has CFDI 4.0 fixtures (Invoice + Nómina).
+  No 3.3 or Pagos 2.0 fixtures yet → those parsers are untested. Add anonymized
+  sample XMLs when available.
+
+## Planned: working directory & auto-organization (FUTURE — not in Step 0)
+Like other admin apps, the app will have a configurable **working directory**
+(default chosen by the app, user can change it, but the internal structure is
+always preserved):
+
+```
+%App_main_folder%/
+├── BovedaCFDI/
+│   └── {RFC}/                 # created on demand if the XML's RFC has no folder
+│       └── {Emitidas|Recibidas}/   # by document direction
+│           └── {YYYY}/        # stamped (timbrado) year, 4 digits
+│               └── {MM}/      # stamped month, 01–12
+└── Reports/
+```
+
+On import, the app checks whether the XML's RFC folder exists (creates it if
+not), then files the XML under Emitidas/Recibidas → year → month based on the
+**fecha de timbrado**. Belongs with Step 2 (the SQLite bóveda / organization
+layer), not Step 0 or the first GUI.
 
 ## Roadmap (realistic, incremental — ship value each step)
 0. Project hygiene: requirements file, clean layout, basic tests on the parsers.
-1. Real GUI (PySide6/Qt preferred for a native, polished feel) wrapping the
-   EXISTING folder→parse→Excel flow — no new features, just make it an app.
+   ✅ DONE — `requirements.txt`, `.gitignore`, `tests/test_parsers.py`
+   (stdlib unittest; run `python -m unittest discover -s tests`).
+1. Real GUI wrapping the EXISTING folder→parse→Excel flow — no new features,
+   just make it an app. **Framework decided: PySide6** (official Qt for Python,
+   LGPLv3 → free to use in a closed-source/paid app; cross-platform Windows/
+   Linux/macOS). NOT PyQt6 (GPL/commercial → would require paying or
+   open-sourcing the whole app).
 2. SQLite "bóveda": parse once, store metadata, stop re-scanning; enables search
    and dedup.
 3. Reports & filters on top of the DB (by RFC, month, type, Emitidas/Recibidas).
