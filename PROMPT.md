@@ -26,9 +26,16 @@ of XML into clean, accountant-ready Excel grouped by *Emitidas* (issued) vs
 *Recibidas* (received).
 
 ## Current architecture (KEEP THIS STRUCTURE)
-- `main.py` — orchestrator. Tkinter file dialogs (folder picker + save-as),
-  `os.walk` over the directory, version dispatch, .zip extraction to a temp dir,
-  dynamic filename logic, post-run "open file" prompt.
+- `core.py` — UI-agnostic pipeline (single source of truth for the flow):
+  `process_path()` walks a folder, `parse_xml_file_by_version()` dispatches per
+  version, `process_zip_file()` handles .zip, `determine_file_naming_components()`
+  / `build_default_filename()` build the dynamic name, `export_report()` writes
+  Excel. Optional `on_log`/`on_progress` callbacks; NO Tkinter/Qt/print here.
+- `gui.py` — **PySide6 GUI (primary entry: `python gui.py`)**. Wraps `core` with
+  a folder picker, progress bar, live log, save dialog, and "open file" prompt.
+  Processing runs in a `QThread` worker so the window stays responsive.
+- `main.py` — Tkinter/console front-end (fallback: `python main.py`). Thin UI
+  over `core`; same flow, dialog-based.
 - `constants.py` — single source of truth for: XML namespaces per version, SAT
   catalogs (TipoDeComprobante, FormaPago, MetodoPago, UsoCFDI, RegimenFiscal),
   column orders (INVOICE_COLUMN_ORDER, PAGOS_COLUMN_ORDER), Nomina field maps,
@@ -107,11 +114,11 @@ layer), not Step 0 or the first GUI.
 0. Project hygiene: requirements file, clean layout, basic tests on the parsers.
    ✅ DONE — `requirements.txt`, `.gitignore`, `tests/test_parsers.py`
    (stdlib unittest; run `python -m unittest discover -s tests`).
-1. Real GUI wrapping the EXISTING folder→parse→Excel flow — no new features,
-   just make it an app. **Framework decided: PySide6** (official Qt for Python,
-   LGPLv3 → free to use in a closed-source/paid app; cross-platform Windows/
-   Linux/macOS). NOT PyQt6 (GPL/commercial → would require paying or
-   open-sourcing the whole app).
+1. Real GUI wrapping the EXISTING folder→parse→Excel flow — no new features.
+   ✅ DONE — `gui.py` (PySide6). Logic extracted to `core.py`; `main.py` kept as
+   console fallback. **PySide6** chosen (official Qt for Python, LGPLv3 → free in
+   a closed-source/paid app; cross-platform). NOT PyQt6 (GPL/commercial). GUI
+   tests run headless via `QT_QPA_PLATFORM=offscreen`.
 2. SQLite "bóveda": parse once, store metadata, stop re-scanning; enables search
    and dedup.
 3. Reports & filters on top of the DB (by RFC, month, type, Emitidas/Recibidas).
