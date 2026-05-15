@@ -54,6 +54,8 @@ class MainWindow(QMainWindow):
         self.input_folder = ""
         self.thread = None
         self.worker = None
+        self._result = None
+        self._error = None
 
         core.create_initial_directories()
 
@@ -148,6 +150,8 @@ class MainWindow(QMainWindow):
 
         self.log_view.clear()
         self.progress_bar.setValue(0)
+        self._result = None
+        self._error = None
         self._set_busy(True)
 
         # Arrancar worker en un hilo
@@ -158,14 +162,12 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.run)
         self.worker.log.connect(self.append_log)
         self.worker.progress.connect(self.on_progress)
-        self.worker.finished.connect(self.on_finished)
-        self.worker.failed.connect(self.on_failed)
-
-        # Limpieza del hilo
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.failed.connect(self.thread.quit)
-        self.thread.finished.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
+        # El worker solo guarda el resultado y pide cerrar el hilo.
+        self.worker.finished.connect(self.on_worker_finished)
+        self.worker.failed.connect(self.on_worker_failed)
+        # TODO el trabajo posterior (dialogos, exportar) ocurre DESPUES de que
+        # el hilo termina por completo -> evita "QThread: Destroyed while running".
+        self.thread.finished.connect(self.on_thread_finished)
 
         self.thread.start()
 
@@ -177,19 +179,52 @@ class MainWindow(QMainWindow):
             self.progress_bar.setFormat(f"%v / %m  -  {name}")
 
     @Slot(object)
-    def on_finished(self, result):
-        self._set_busy(False)
-        self.thread = None
-        self.worker = None
+    def on_worker_finished(self, result):
+        # Corre en el hilo principal (conexion en cola). Solo guarda y cierra.
+        self._result = result
+        self.thread.quit()
 
-        if not result.has_data:
+    @Slot(str)
+    def on_worker_failed(self, message):
+        self._error = message
+        self.thread.quit()
+
+    @Slot()
+    def on_thread_finished(self):
+        # El bucle del hilo ya termino: ahora es seguro limpiar y exportar.
+        if self.worker is not None:
+            self.worker.deleteLater()
+        if self.thread is not None:
+            self.thread.deleteLater()
+        self.worker = None
+        self.thread = None
+        self._set_busy(True)  # mantener deshabilitado hasta terminar exportacion
+
+        if self._error:
+            self.progress_bar.setFormat("Error")
+            QMessageBox.critical(
+                self, APP_TITLE,
+                f"Ocurrio un error durante el procesamiento:\n{self._error}")
+            self._set_busy(False)
+            return
+
+        result = self._result
+        if result is None or not result.has_data:
             self.progress_bar.setFormat("Sin datos")
             QMessageBox.information(
                 self, APP_TITLE,
                 "No se procesaron archivos XML CFDI validos.\n"
                 "Verifica el directorio y los formatos de archivo.")
+            self._set_busy(False)
             return
 
+        try:
+            self._export_result(result)
+        finally:
+            self._set_busy(False)
+
+    def _export_result(self, result):
+        """Resumen + dialogo de guardado + exportacion. Corre sin hilo activo."""
         summary = (
             f"Procesados: {result.processed_count}  |  "
             f"Errores: {result.error_count}\n"
@@ -200,7 +235,6 @@ class MainWindow(QMainWindow):
         self.append_log("\n" + summary)
         self.progress_bar.setFormat("Completado")
 
-        # Dialogo para guardar el Excel
         default_name = core.build_default_filename(result.all_parsed_data)
         default_path = os.path.join(core.REPORTS_DIR, default_name)
         output_path, _ = QFileDialog.getSaveFileName(
@@ -229,15 +263,6 @@ class MainWindow(QMainWindow):
                 core.open_file(output_path)
             except Exception as exc:
                 self.append_log(f"No se pudo abrir el archivo: {exc}")
-
-    @Slot(str)
-    def on_failed(self, message):
-        self._set_busy(False)
-        self.thread = None
-        self.worker = None
-        self.progress_bar.setFormat("Error")
-        QMessageBox.critical(self, APP_TITLE,
-                             f"Ocurrio un error durante el procesamiento:\n{message}")
 
 
 def main():
