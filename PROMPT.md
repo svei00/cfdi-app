@@ -3,6 +3,11 @@
 > Reusable spec. Paste into any AI (Claude, GLM, ChatGPT, Gemini) so it
 > understands the app without seeing the code or screenshots. Keep it updated as
 > the app evolves.
+>
+> **⚠️ For the NEXT build phase (F2 — GUI stabilization & package restructure),
+> the master document is `ROADMAP.md`** (bug diagnosis, full project phases,
+> F2 architecture, recorded decisions). Read it first; this file is the
+> product-level spec.
 
 ## Role
 You are helping me build and extend a desktop application for Mexican electronic
@@ -26,33 +31,48 @@ of XML into clean, accountant-ready Excel grouped by *Emitidas* (issued) vs
 *Recibidas* (received).
 
 ## Current architecture (KEEP THIS STRUCTURE)
-- `core.py` — UI-agnostic pipeline (single source of truth for the flow):
-  `process_path()` walks a folder, `parse_xml_file_by_version()` dispatches per
-  version, `process_zip_file()` handles .zip, `determine_file_naming_components()`
-  / `build_default_filename()` build the dynamic name, `export_report()` writes
-  Excel. Optional `on_log`/`on_progress` callbacks; NO Tkinter/Qt/print here.
-- `gui.py` — **PySide6 GUI (primary entry: `python gui.py`)**. Wraps `core` with
-  a folder picker, progress bar, live log, save dialog, and "open file" prompt.
-  Processing runs in a `QThread` worker so the window stays responsive.
-- `main.py` — Tkinter/console front-end (fallback: `python main.py`). Thin UI
-  over `core`; same flow, dialog-based.
-- `constants.py` — single source of truth for: XML namespaces per version, SAT
-  catalogs (TipoDeComprobante, FormaPago, MetodoPago, UsoCFDI, RegimenFiscal),
-  column orders (INVOICE_COLUMN_ORDER, PAGOS_COLUMN_ORDER), Nomina field maps,
-  fuel-code helpers.
-- `xml_parser_33.py` — parses CFDI **3.3** → dict.
-- `xml_parser_40.py` — parses CFDI **4.0** → dict (Invoice or Nomina).
-- `pagos_parser_20.py` — parses **Pagos 2.0** complement → list of dicts.
-- `excel_exporter.py` — writes the DataFrames to Excel, one sheet per doc type,
-  with column auto-sizing.
+Since F2 (see ROADMAP.md), this is an installable package (`pip install -e .`,
+`pyproject.toml`, `src/` layout), not flat root-level scripts:
+
+- `src/cfdi_app/core.py` — UI-agnostic pipeline (single source of truth for the
+  flow): `process_path()` walks a folder, `parse_xml_file_by_version()`
+  dispatches per version, `process_zip_file()` handles .zip,
+  `determine_file_naming_components()` / `build_default_filename()` build the
+  dynamic name, `export_report()` writes Excel. Optional `on_log`/`on_progress`
+  callbacks; NO Tkinter/Qt/print here. `ProcessResult.errors` lists per-file
+  failures with a reason (not just a count).
+- `src/cfdi_app/ui/` — **PySide6 GUI (primary entry: `python -m cfdi_app` /
+  `run_gui.bat`)**: `state.py` (Qt-free state machine enum), `worker.py`
+  (QThread worker), `main_window.py` (the window). Wraps `core` with a folder
+  picker, progress bar, live log, explicit "Guardar Excel…"/"Abrir archivo"
+  buttons. Processing runs in a `QThread` worker so the window stays responsive.
+  **Golden rule:** dialogs only open from a direct user click, never from a
+  worker/thread callback (see ROADMAP.md Bug 1).
+- `src/cfdi_app/cli.py` — no-dialog console front-end (`python -m cfdi_app.cli`).
+  The Tkinter `main.py` fallback was retired in F2 (ROADMAP.md decision D7).
+- `src/cfdi_app/paths.py` — single owner of data directory paths (Documents/CFDI-Processor/).
+- `src/cfdi_app/log_setup.py` — rotating file log + global exception hook.
+- `src/cfdi_app/constants.py` — single source of truth for: XML namespaces per
+  version, SAT catalogs (TipoDeComprobante, FormaPago, MetodoPago, UsoCFDI,
+  RegimenFiscal), column orders (INVOICE_COLUMN_ORDER, PAGOS_COLUMN_ORDER),
+  Nomina field maps, fuel-code helpers.
+- `src/cfdi_app/parsers/xml_parser_33.py` — parses CFDI **3.3** → dict.
+- `src/cfdi_app/parsers/xml_parser_40.py` — parses CFDI **4.0** → dict (Invoice or Nomina).
+- `src/cfdi_app/parsers/pagos_parser_20.py` — parses **Pagos 2.0** complement → list of dicts.
+- `src/cfdi_app/exporters/excel_exporter.py` — writes the DataFrames to Excel,
+  one sheet per doc type, with column auto-sizing (single shared helper, not
+  triplicated). Propagates exceptions (e.g. PermissionError if the destination
+  is open in Excel) instead of swallowing them.
 
 ### CRITICAL DESIGN RULE — version isolation
-Each CFDI version has its OWN parser module. Detection happens in `main.py` by
-reading the `Version` attribute and `TipoDeComprobante`. When the SAT releases a
-new version (4.1, 5.0, a new Pagos/Nómina complement, etc.), I add a NEW parser
-module and ONE dispatch branch — existing parsers must NOT be touched. Never
-merge the version parsers into one file. This isolation is intentional and must
-be preserved in every change you propose.
+Each CFDI version has its OWN parser module, in `src/cfdi_app/parsers/`.
+Detection happens in `core.py` by reading the `Version` attribute and
+`TipoDeComprobante`. When the SAT releases a new version (4.1, 5.0, a new
+Pagos/Nómina complement, etc.), I add a NEW parser module and ONE dispatch
+branch — existing parsers must NOT be touched. Never merge the version parsers
+into one file. This isolation is intentional and must be preserved in every
+change you propose. (It's also what lets the future Lite/Pro/Top editions
+share one codebase — see ROADMAP.md §5.2.)
 
 ### Detection logic (current)
 - `TipoDeComprobante == 'P'` and `Version == '4.0'` → Pagos 2.0 parser (returns a list).
@@ -81,14 +101,12 @@ This isolation is to protect users and to avoid legal liability. Treat it as a
 hard architectural boundary, like the version-parser isolation.
 
 ## Known issues to fix later (do NOT fix unless asked)
-- Hard-coded relative base path (`../../AdminXML`) — will become a user-chosen /
-  default directory once the GUI exists. See "Planned: working directory &
-  auto-organization" below.
-- `excel_exporter.py` repeats the column-autosize loop 3× — candidate for a helper.
-- No persistence (re-parses every run).
+- No persistence (re-parses every run) — resolved by the SQLite bóveda (ROADMAP.md F4).
 - Test coverage gap: `tests/` only has CFDI 4.0 fixtures (Invoice + Nómina).
   No 3.3 or Pagos 2.0 fixtures yet → those parsers are untested. Add anonymized
   sample XMLs when available.
+- ~~Hard-coded relative base path~~ — fixed in F2 (`paths.py`, Documents/CFDI-Processor/).
+- ~~`excel_exporter.py` autosize loop triplicated~~ — fixed in F2 (shared `autosize_columns()` helper).
 
 ## Planned: working directory & auto-organization (FUTURE — not in Step 0)
 Like other admin apps, the app will have a configurable **working directory**
@@ -110,36 +128,16 @@ not), then files the XML under Emitidas/Recibidas → year → month based on th
 **fecha de timbrado**. Belongs with Step 2 (the SQLite bóveda / organization
 layer), not Step 0 or the first GUI.
 
-## Roadmap (realistic, incremental — ship value each step)
-0. Project hygiene: requirements file, clean layout, basic tests on the parsers.
-   ✅ DONE — `requirements.txt`, `.gitignore`, `tests/test_parsers.py`
-   (stdlib unittest; run `python -m unittest discover -s tests`).
-1. Real GUI wrapping the EXISTING folder→parse→Excel flow — no new features.
-   ✅ DONE — `gui.py` (PySide6). Logic extracted to `core.py`; `main.py` kept as
-   console fallback. **PySide6** chosen (official Qt for Python, LGPLv3 → free in
-   a closed-source/paid app; cross-platform). NOT PyQt6 (GPL/commercial). GUI
-   tests run headless via `QT_QPA_PLATFORM=offscreen`.
-2. SQLite "bóveda": parse once, store metadata, stop re-scanning; enables search
-   and dedup.
-3. Reports & filters on top of the DB (by RFC, month, type, Emitidas/Recibidas).
-4. SAT download (isolated spike). SAT mass download supports CIEC login and
-   FIEL/e.firma; the FIEL path is a signed SOAP web-service flow with async
-   request→wait→verify→download. Lean on existing Python libraries for the
-   crypto/SOAP handshake rather than reinventing it. (Requires the e.firma
-   isolation layer above.)
-5. **Validación de estatus** — query SAT for each CFDI's status
-   (vigente / cancelado / no encontrado), like Contpaqi and MiAdminXML do.
-   Cache results. Can go live once SAT connectivity (step 4) exists.
-6. **Módulo de Cancelación** — cancel CFDIs through the SAT (with motivo de
-   cancelación, folio sustituto where required, and acuse retrieval). Requires
-   FIEL. High legal/financial sensitivity — build carefully, with confirmations
-   and audit logging. Goes live after SAT connectivity and validation.
-7. Much later / optional: PDF generation, EFOS / lista negra checks, Nómina
-   analytics, and eventually a Contabilidad Electrónica module (catálogo de
-   cuentas, balanza, DIOT) as a low-cost alternative to expensive licenses
-   (Contpaqi, MiAdminXML).
+## Roadmap
+Full phase list (F0–F11), dependencies, and the current phase marker now live
+in **ROADMAP.md §5** — that table supersedes any step list here. Quick recap of
+where things stand: F0 (hygiene) and F1 (GUI wrapper) done; **F2 (GUI
+stabilization — bug fixes + package restructure) done**, see ROADMAP.md §6 for
+what was built and §6.9 for acceptance criteria. Next up: F3 (working
+directory + auto-organization) or F4 (SQLite bóveda).
 
-Long-term goal: package and sell it (Windows first; users are on Windows).
+Long-term goal: package and sell it (Windows first; users are on Windows), as
+**Lite/Pro/Top editions sharing one codebase** (ROADMAP.md §5.2, decision D10).
 
 ## How to work with me
 - Build piece by piece, small steps, each one runnable.

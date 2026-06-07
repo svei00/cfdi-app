@@ -8,7 +8,7 @@ setlocal
 cd /d "%~dp0"
 
 echo Procesando XML-Test...
-python cli.py "%~dp0XML-Test" -o "%~dp0test_output.xlsx" --open
+python -m cfdi_app.cli "%~dp0XML-Test" -o "%~dp0test_output.xlsx" --open
 
 echo.
 echo Listo. (Salida: test_output.xlsx)

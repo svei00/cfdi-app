@@ -1,16 +1,16 @@
-# --- cli.py ---
+# --- cfdi_app/cli.py ---
 # Modo linea de comandos SIN dialogos: procesa una carpeta y exporta a Excel.
 # Pensado para pruebas rapidas (ver test.bat) sin tener que elegir la ruta cada vez.
 #
 # Uso:
-#   python cli.py <carpeta_entrada> [-o salida.xlsx] [--open]
+#   python -m cfdi_app.cli <carpeta_entrada> [-o salida.xlsx] [--open]
 #
 # Si no se indica -o, el nombre se genera automaticamente en la carpeta Reports.
 import os
 import sys
 import argparse
 
-import core
+from cfdi_app import core
 
 
 def main(argv=None):
@@ -36,17 +36,30 @@ def main(argv=None):
 
     if not result.has_data:
         print("No se procesaron archivos XML CFDI validos.")
+        if result.errors:
+            print(f"\n{len(result.errors)} error(es):")
+            for label, reason in result.errors:
+                print(f"  - {label}: {reason}")
         return 2
 
     output_path = args.output or os.path.join(
         core.REPORTS_DIR, core.build_default_filename(result.all_parsed_data))
-    core.export_report(result, output_path)
+
+    try:
+        core.export_report(result, output_path)
+    except Exception as exc:
+        print(f"Error al exportar el Excel: {exc}")
+        return 3
 
     print(f"\nProcesados: {result.processed_count}  |  Errores: {result.error_count}")
     print(f"Facturas: {len(result.invoice_data)}  |  "
           f"Nomina: {len(result.nomina_data)}  |  "
           f"Pagos: {len(result.pagos_data)}")
-    print(f"Excel guardado en: {output_path}")
+    if result.errors:
+        print(f"\nArchivos con error ({len(result.errors)}):")
+        for label, reason in result.errors:
+            print(f"  - {label}: {reason}")
+    print(f"\nExcel guardado en: {output_path}")
 
     if args.open_after:
         core.open_file(output_path)

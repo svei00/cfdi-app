@@ -4,7 +4,7 @@
 import xml.etree.ElementTree as ET
 import os
 from datetime import datetime
-from constants import (
+from cfdi_app.constants import (
     NAMESPACES_CFDI_40, FORMA_PAGO_MAP, TIPO_COMPROBANTE_MAP, USO_CFDI_MAP,
     REGIMEN_FISCAL_RECEPTOR_MAP, PAGOS_COLUMN_ORDER, PAGO_FIELDS_TO_EXTRACT,
     PAGO_DR_FIELDS_TO_EXTRACT, CFDI_COMMON_CHILD_ELEMENTS_TO_EXTRACT, PAGO_DR_TAX_FIELDS

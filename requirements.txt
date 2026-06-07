@@ -1,11 +1,14 @@
 # CFDI Processor - runtime dependencies
-# Install with: pip install -r requirements.txt
 #
-# Parsing uses xml.etree.ElementTree (Python stdlib) - no dependency needed.
+# Desde F2 el proyecto es un paquete instalable (ver pyproject.toml). Instala
+# con:
+#   pip install -e .
+# Este archivo se conserva por compatibilidad / referencia rapida.
+#
+# Parsing usa xml.etree.ElementTree (stdlib) - no requiere dependencia.
 
 pandas>=2.0
 openpyxl>=3.1
 
-# GUI (Step 1). PySide6 = LGPL -> libre para uso comercial/cerrado.
-# El front-end de consola (main.py) usa Tkinter (stdlib) y no requiere esto.
+# GUI. PySide6 = LGPL -> libre para uso comercial/cerrado (ver ROADMAP.md D1).
 PySide6>=6.8

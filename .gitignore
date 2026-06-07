@@ -7,9 +7,11 @@ __pycache__/
 venv/
 env/
 
-# CFDI app data - never commit real fiscal data / generated reports
-CFDI_Processor_App/Boveda_XMLs/
-CFDI_Processor_App/Reports/
+# CFDI app data - never commit real fiscal data / generated reports.
+# Since F2 (ROADMAP.md D4) the app's data dir is Documents/CFDI-Processor/,
+# outside the repo entirely. These patterns are a safety net in case of a
+# misconfigured path or legacy local files.
+CFDI_Processor_App/
 AdminXML/
 *.xlsx
 

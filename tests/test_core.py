@@ -9,13 +9,15 @@ Ejecutar con:
 """
 import os
 import sys
+import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
+SRC_DIR = os.path.join(REPO_ROOT, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
-import core  # noqa: E402
+from cfdi_app import core  # noqa: E402
 
 FIXTURE_DIR = os.path.join(REPO_ROOT, "XML-Test")
 
@@ -48,12 +50,66 @@ class TestProcessPath(unittest.TestCase):
         # Formato {RFC}_{Tipo}_{Fecha}.xlsx -> al menos dos separadores '_'.
         self.assertGreaterEqual(name.count("_"), 2)
 
+    def test_no_errors_on_clean_fixtures(self):
+        self.assertEqual(self.result.errors, [])
+        self.assertEqual(self.result.error_count, 0)
+
 
 class TestProcessPathInvalid(unittest.TestCase):
     def test_invalid_path_returns_empty_result(self):
         result = core.process_path(os.path.join(REPO_ROOT, "no_such_dir_xyz"))
         self.assertFalse(result.has_data)
         self.assertEqual(result.processed_count, 0)
+
+
+class TestProcessPathErrorsPerFile(unittest.TestCase):
+    """ROADMAP.md Sec.6.5/6.9: los errores deben quedar listados por archivo,
+    no solo contados. Antes de F2, parse_xml_file_by_version devolvia None sin
+    registrar la causa."""
+
+    def test_corrupt_xml_is_listed_with_reason(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bad_path = os.path.join(tmp_dir, "corrupto.xml")
+            with open(bad_path, "w", encoding="utf-8") as f:
+                f.write("<Comprobante Version='4.0'><SinCerrar>")
+
+            result = core.process_path(tmp_dir)
+
+            self.assertFalse(result.has_data)
+            self.assertEqual(result.error_count, 1)
+            self.assertEqual(len(result.errors), 1)
+            label, reason = result.errors[0]
+            self.assertEqual(label, bad_path)
+            self.assertIn("malformado", reason.lower())
+
+    def test_unsupported_version_is_listed_with_reason(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            xml_path = os.path.join(tmp_dir, "no_soportado.xml")
+            with open(xml_path, "w", encoding="utf-8") as f:
+                f.write('<Comprobante Version="1.0" TipoDeComprobante="I"/>')
+
+            result = core.process_path(tmp_dir)
+
+            self.assertFalse(result.has_data)
+            self.assertEqual(result.error_count, 1)
+            label, reason = result.errors[0]
+            self.assertEqual(label, xml_path)
+            self.assertIn("no soportado", reason.lower())
+
+    def test_corrupt_zip_does_not_crash_the_whole_run(self):
+        """Un .zip danado ya no debe tumbar todo process_path (defecto previo:
+        BadZipFile se propagaba sin control)."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            bad_zip = os.path.join(tmp_dir, "corrupto.zip")
+            with open(bad_zip, "wb") as f:
+                f.write(b"esto no es un zip valido")
+
+            result = core.process_path(tmp_dir)  # no debe lanzar excepcion
+
+            self.assertEqual(result.error_count, 1)
+            label, reason = result.errors[0]
+            self.assertEqual(label, "corrupto.zip")
+            self.assertIn("zip", reason.lower())
 
 
 if __name__ == "__main__":

@@ -1,0 +1,429 @@
+# ROADMAP.md — CFDI Processor: diagnóstico, fases y arquitectura F2
+
+> **Documento maestro para construir la Fase 2 (Estabilización y reestructura).**
+> Generado en la fase de análisis/diseño (2026-07-01). Autocontenido: un modelo
+> (Opus 4.8 / Sonnet 5) debe poder construir F2 leyendo SOLO este archivo más el
+> código. Complementa a `PROMPT.md` (spec general del producto) y a
+> `Roadmap_Aplicacion_CFDI.md` (visión estratégica de largo plazo).
+
+---
+
+## 1. Estado actual (2026-07-01)
+
+- Entorno de desarrollo: Windows 11, Python 3.14, deps en `requirements.txt`
+  (pandas, openpyxl, PySide6 6.11 — instalada y verificada). Pruebas con
+  `unittest` de la stdlib (sin pytest, a propósito: cero fricción).
+- Pipeline funcional: CFDI 3.3 / 4.0 / Nómina 1.2 / Pagos 2.0 → Excel multi-hoja.
+- 9 pruebas verdes: `python -m unittest discover -s tests` (solo fixtures 4.0;
+  3.3 y Pagos SIN cobertura — falta conseguir XMLs anonimizados).
+- GUI PySide6 (`gui.py`) construida pero **rota en máquina real** (Bug 1 abajo).
+- Front-ends actuales: `gui.py` (PySide6), `main.py` (Tkinter/consola, legacy),
+  `cli.py` (sin diálogos, usado por `test.bat`).
+- Módulos planos en la raíz del repo. Último commit relevante: `ff093e7`.
+
+## 2. Reglas INTOCABLES (heredadas de PROMPT.md)
+
+1. **Aislamiento por versión:** cada versión CFDI tiene SU módulo parser
+   (`xml_parser_33.py`, `xml_parser_40.py`, `pagos_parser_20.py`). Nueva versión
+   SAT = nuevo módulo + una rama de despacho. Jamás fusionar ni tocar los
+   existentes. En F2 los parsers SOLO cambian de carpeta — ni una línea de lógica.
+2. **Aislamiento e.firma/FIEL** (aplica desde F6): credenciales en capa dedicada,
+   cifradas en reposo, nunca en logs/temporales/reportes, solo a endpoints
+   oficiales SAT por HTTPS verificado, con consentimiento explícito del usuario.
+
+## 3. Diagnóstico de los bugs reportados
+
+### Bug 1 — GUI "congelada" al terminar el procesamiento
+
+**Síntoma:** procesa, termina, y la app no responde: no pregunta nada, no
+permite otra acción.
+
+**Evidencia:** toda la cadena de hilos (worker → `on_worker_finished` →
+`thread.quit()` → `on_thread_finished` → exportación) fue verificada funcionando
+en esta misma máquina en modo offscreen con diálogos simulados. Lo primero que
+difiere en una corrida real son los diálogos nativos.
+
+**Causa raíz (confianza alta):** `gui.py` dispara una cadena de diálogos modales
+AUTOMÁTICOS desde el callback de fin de hilo (`on_thread_finished` →
+`_export_result` → `QFileDialog.getSaveFileName` en gui.py:240 →
+`QMessageBox.question` en gui.py:257). Un diálogo nativo lanzado
+programáticamente (no por clic) puede abrirse sin activación: detrás de la
+ventana o sin foco. Un modal invisible bloquea toda la app = el síntoma exacto.
+`_set_busy(True)` (gui.py:201) amplifica: los botones quedan deshabilitados
+hasta que el diálogo invisible se cierre.
+
+**Defectos contribuyentes (corregir todos en F2):**
+
+| # | Defecto | Ubicación |
+|---|---|---|
+| 1 | Diálogos modales automáticos desde callback de hilo | gui.py:221-265 |
+| 2 | `self.thread` sombrea el método heredado `QObject.thread()` | gui.py:158 |
+| 3 | `worker.deleteLater()` posteado a un hilo ya muerto (nunca se procesa; fuga) | gui.py:195-196 |
+| 4 | `excel_exporter.py` traga TODAS las excepciones (`except Exception: print`) → si el .xlsx destino está abierto en Excel, falla en silencio y la GUI reporta éxito falso | excel_exporter.py:155-157 |
+| 5 | Cero logging a archivo → imposible diagnosticar en máquina real | todo el proyecto |
+
+**Solución diseñada:** ver §6 (máquina de estados + patrón de hilos canónico +
+logging). La corrección de fondo: **ningún diálogo se abre solo; los diálogos
+nacen de clics del usuario**, lo que garantiza foco y elimina la clase entera
+del bug.
+
+### Bug 2 — `run_gui.bat` deja una terminal negra abierta
+
+**Causa raíz:** `run_gui.bat` ejecuta `python gui.py`. `python.exe` es el
+intérprete DE CONSOLA: mantiene la ventana cmd atada durante toda la vida de la
+app (negra porque la GUI no imprime nada), y el .bat espera a que termine.
+
+**Solución diseñada:**
+- `run_gui.bat` → `start "" pythonw -m cfdi_app` (`pythonw.exe` no crea consola;
+  `start` desacopla y el cmd se cierra al instante).
+- `run_gui_debug.bat` → `python -m cfdi_app` (consola visible, para diagnóstico).
+- **Caveat crítico:** `pythonw` descarta stdout/stderr → un crash de arranque es
+  invisible. Por eso el logging a archivo + `sys.excepthook` (§6) son
+  PREREQUISITO de este cambio, no opcionales.
+- Definitivo para distribución: PyInstaller `--windowed` (Fase F9, sin prisa).
+
+## 4. Deuda técnica y riesgos identificados
+
+1. **Privacidad ⚠️:** git rastrea 7 reportes `.xlsx` en
+   `CFDI_Processor_App/Reports/` con RFCs aparentemente reales (p.ej.
+   `GOOH841231EPA`) y 23 `.pyc` viejos. `.gitignore` no des-rastrea lo ya
+   commiteado. Acción F2: `git rm --cached` de ambos grupos. (El historial los
+   conserva; si el repo se comparte algún día, evaluar `git filter-repo`.)
+2. **`BASE_APP_DIR` resuelve a `D:\AdminXML`** — raíz del disco, calculado desde
+   la ubicación del repo, y hereda el nombre de la app competidora (MiAdminXML).
+   Acción F2: mover default a `Documents\CFDI-Processor\` (§6, decisión D4).
+3. Errores por archivo se pierden: `core.parse_xml_file_by_version` devuelve
+   `None` sin registrar cuál archivo falló ni por qué (core.py:91-95). Para
+   contadores, "3 errores" sin lista de archivos es inaceptable.
+4. `excel_exporter.py`: bucle de auto-ancho triplicado + `print()` en vez de
+   logging + el `except` tragón del Bug 1.4.
+5. README.md desactualizado (describe la era pre-GUI).
+6. Sin fixtures 3.3 / Pagos 2.0 en `tests/` (parsers sin red de seguridad).
+7. Escalabilidad: todo en memoria + re-parseo total por corrida (lo resuelve F4
+   bóveda SQLite, ya planeada); auto-ancho O(celdas) será cuello de botella con
+   decenas de miles de filas (aceptable hasta F5).
+
+## 5. Fases del proyecto (completas)
+
+| Fase | Nombre | Entrega | Depende de | Estado |
+|---|---|---|---|---|
+| F0 | Higiene | requirements, .gitignore, 9 pruebas | — | ✅ Hecha |
+| F1 | GUI envolvente | GUI PySide6 sobre carpeta→parseo→Excel | F0 | ⚠️ Construida, rota (Bugs 1/2) |
+| F2 | Estabilización y reestructura | GUI estable + logging + paquete + datos en Documents + limpieza git | F1 | ✅ Construida y verificada 2026-07-03 (ver §9) — **falta confirmación del dueño en máquina real (criterio 6.9.1)** |
+| **F3** | **Directorio de trabajo + auto-organización** | Settings persistentes, selector de working dir, archivado `BovedaCFDI\{RFC}\{Emitidas|Recibidas}\{YYYY}\{MM}` (año/mes = fecha de timbrado) | F2 | ⬅️ **CANDIDATA A SIGUIENTE FASE** (o F4, a decidir con el dueño) |
+| F4 | Bóveda SQLite | Parseo único, metadatos en DB, dedup por UUID, búsqueda | F2 | Pendiente |
+| F5 | Reportes y filtros | Tablas Qt Model/View, filtros RFC/mes/tipo + **búsqueda de texto FTS5** (nativa de SQLite, cero dependencias) sobre descripciones de conceptos | F4 | Pendiente |
+| F6 | SAT — descarga | CIEC primero, FIEL después; capa aislada e.firma | F2 (guarda en F4) | Pendiente |
+| F7 | Validación de estatus | Vigente/cancelado/no encontrado + caché | F6+F4 | Pendiente |
+| F8 | Cancelación | Motivo, folio sustituto, acuse, confirmaciones + bitácora | F6, F7 | Pendiente |
+| F9 | Empaque, ediciones y licencias | PyInstaller --windowed + instalador + **ediciones Lite/Pro/Top con matriz de features y licencia** (ver §5.2). Disparador: primer usuario externo | F2+ | Sin prisa (solo el dueño usa la app hoy) |
+| F10 | Módulos avanzados | PDF, EFOS, analítica nómina, Contabilidad Electrónica/DIOT | F4–F7 | Largo plazo |
+| F11 | Búsqueda semántica (OPCIONAL) | Embeddings + `sqlite-vec` (Apache-2.0/MIT, libre) para búsqueda por significado sobre descripciones de conceptos. **Disparador:** que FTS5 (F5) se quede corto Y exista modelo de embeddings LOCAL pequeño y empaquetable | F4+F5 | Opcional, largo plazo |
+
+### 5.1 Nota de diseño: estrategia de búsqueda (SQL vs FTS5 vs vectores)
+
+Tres niveles, del más barato al más caro — implementar en este orden:
+
+1. **Filtros estructurados** (RFC, fechas, montos, tipo, UUID): SQL normal con
+   índices. Es el caso de uso principal ("filtro tipo Excel") y lo cubre F4/F5.
+   Los vectores serían PEORES aquí: la búsqueda semántica es imprecisa por
+   diseño para criterios exactos.
+2. **Texto libre** ("gasolina", "honorarios"): **FTS5**, motor de texto completo
+   incluido en SQLite (cero dependencias, gratis). Va en F5, indexando las
+   descripciones de conceptos.
+3. **Semántica** ("materiales de construcción" → encuentra "CEMENTO GRIS CPC
+   30R"): `sqlite-vec` almacena/compara vectores, pero NO los genera — se
+   necesita un modelo de embeddings. Modelo local = +100–500 MB y complica
+   PyInstaller (F9); API en la nube = costo + **enviar datos fiscales de
+   clientes a terceros** (choca con la propuesta de confianza de la app y el
+   espíritu de la regla e.firma). Por eso F11 es opcional y tardía.
+
+**Cobertura barata desde F4:** el esquema de la bóveda guarda las descripciones
+de conceptos en su propia tabla normalizada → agregar FTS5 o sqlite-vec después
+es una migración, no un rediseño.
+
+### 5.2 Ediciones Lite / Pro / Top: UN solo código, tres productos (D10)
+
+Habrá tres ediciones comerciales. La arquitectura sostenible para un
+desarrollador solo es **un único codebase con compuertas de funcionalidad
+(feature gating)** — NUNCA tres repositorios ni tres forks.
+
+- Un único paquete `cfdi_app` contiene TODO el código (parsers, bóveda, SAT,
+  módulos). Las ediciones NO son códigos distintos: son la MISMA aplicación con
+  funciones habilitadas/deshabilitadas según la edición activa.
+- Módulo `editions.py` (nace en F9): matriz declarativa de features por edición.
+  Borrador inicial (contenido exacto y precios se deciden al llegar a F9):
+  - `LITE`  = { descarga SAT, exportar Excel básico }
+  - `PRO`   = LITE + { bóveda, reportes/filtros, validación de estatus }
+  - `TOP`   = PRO + { cancelación, analítica nómina, Contabilidad Electrónica/DIOT }
+- La edición activa la determina la **licencia en tiempo de ejecución**, no el
+  build. Un solo instalador/ejecutable, un solo canal de actualizaciones.
+  (Alternativa de tres builds con flags: DESCARTADA — triplica el trabajo de
+  release sin beneficio.)
+- La UI consulta la matriz: features fuera de la edición se ocultan o se
+  muestran deshabilitados con invitación a subir de plan (decisión de UX en F9).
+- **Flujo "SAT libera CFDI 4.1/5.0":** agregar `parsers/xml_parser_41.py` + UNA
+  rama de despacho (regla intocable §2.1) → una sola release → Lite, Pro y Top
+  quedan actualizadas simultáneamente porque comparten el mismo core. Este es
+  el requisito explícito del dueño y la regla de aislamiento ya lo garantiza.
+- Impacto en F2: NINGÚN trabajo extra — la estructura de paquete modular de §6.1
+  es exactamente la separación que el gating necesitará. No implementar gating
+  antes de F9.
+- Nota realista anti-piratería: el gating por licencia en Python es disuasorio,
+  no infranqueable. Suficiente para el mercado objetivo (contadores/PyMEs);
+  endurecer solo si el negocio lo justifica.
+
+## 6. Arquitectura de F2 (lo que hay que construir)
+
+### 6.1 Estructura de paquete (migración autorizada por el dueño)
+
+```
+cfdi-app/
+├── run_gui.bat              → start "" pythonw -m cfdi_app
+├── run_gui_debug.bat        → python -m cfdi_app
+├── test.bat                 → python -m cfdi_app.cli XML-Test -o test_output.xlsx
+├── requirements.txt
+├── README.md / PROMPT.md / ROADMAP.md
+├── src/cfdi_app/
+│   ├── __init__.py
+│   ├── __main__.py          # python -m cfdi_app → lanza la GUI
+│   ├── paths.py             # ÚNICO dueño de rutas de datos (ver 6.4)
+│   ├── log_setup.py         # RotatingFileHandler + sys.excepthook
+│   ├── constants.py         # contenido sin cambios
+│   ├── core.py              # pipeline sin UI (ver 6.5)
+│   ├── cli.py               # modo sin diálogos (hoy cli.py raíz)
+│   ├── parsers/
+│   │   ├── __init__.py
+│   │   ├── xml_parser_33.py   # MISMOS nombres, SOLO se mueven. Cero cambios de lógica.
+│   │   ├── xml_parser_40.py
+│   │   └── pagos_parser_20.py
+│   ├── exporters/
+│   │   ├── __init__.py
+│   │   └── excel_exporter.py  # ver 6.6
+│   └── ui/
+│       ├── __init__.py
+│       ├── main_window.py     # View + máquina de estados (ver 6.2)
+│       └── worker.py          # ProcessWorker (QObject)
+└── tests/                     # mismas 9 pruebas con imports actualizados + nuevas (ver 6.7)
+```
+
+- Los módulos planos de la raíz (`gui.py`, `core.py`, `cli.py`, `constants.py`,
+  parsers, exporter) SE MUEVEN al paquete y desaparecen de la raíz.
+- `main.py` (Tkinter/consola) SE RETIRA: `cli.py` cubre el uso sin GUI.
+  *Decisión reversible; si el dueño pide conservarlo, congelarlo como legacy.*
+- Para que `python -m cfdi_app` funcione desde la raíz sin instalar: incluir la
+  configuración mínima (pyproject.toml con `pip install -e .`, o ajustar
+  sys.path en los .bat — preferir pyproject + editable install).
+
+### 6.2 GUI: máquina de estados explícita (corrección de fondo del Bug 1)
+
+Enum de estados y UN método `_apply_state(state)` que gobierna toda la UI:
+
+```
+IDLE ──seleccionar carpeta──▶ READY ──Procesar──▶ PROCESSING ──ok──▶ DONE
+                                ▲                     │                │
+                                └────── error ───▶ ERROR ◀────────────┘
+        (DONE/ERROR → seleccionar otra carpeta o reprocesar → READY/PROCESSING)
+```
+
+| Estado | Seleccionar carpeta | Procesar | Guardar Excel… | Barra progreso |
+|---|---|---|---|---|
+| IDLE | ✅ | ❌ | ❌ | vacía |
+| READY | ✅ | ✅ | ❌ | vacía |
+| PROCESSING | ❌ | ❌ | ❌ | activa |
+| DONE | ✅ | ✅ | ✅ | "Completado" |
+| ERROR | ✅ | ✅ | ❌ | "Error" |
+
+**Reglas de oro (documentarlas como comentario en el código):**
+1. Los slots conectados a señales del worker/hilo SOLO mutan estado y widgets.
+   **JAMÁS abren diálogos modales.**
+2. Todo diálogo modal nace de un clic directo del usuario (botón "Guardar
+   Excel…", botón "Seleccionar carpeta…"). Un diálogo iniciado por clic siempre
+   tiene foco — el clic prueba que la app está en primer plano.
+3. En DONE, el resumen (procesados/errores/facturas/nómina/pagos) se muestra
+   DENTRO de la ventana (panel o log), no en un QMessageBox.
+4. La exportación ocurre en el hilo principal al hacer clic (volúmenes actuales
+   son pequeños; si en el futuro tarda, se moverá a worker — no ahora).
+5. Tras exportar con éxito: mostrar la ruta en el log con un botón/enlace
+   "Abrir" — NO un QMessageBox.question automático.
+
+### 6.3 Hilos: patrón canónico Qt (conexiones exactas)
+
+```
+self._thread = QThread(parent=self)      # "_thread": NO sombrear QObject.thread()
+self._worker = ProcessWorker(carpeta)
+self._worker.moveToThread(self._thread)
+
+self._thread.started         → worker.run
+worker.log(str)              → ui.append_log            (queued automático)
+worker.progress(int,int,str) → ui.on_progress
+worker.finished(object)      → ui.on_result             # guarda resultado, estado DONE
+worker.finished              → self._thread.quit
+worker.finished              → worker.deleteLater       # se procesa EN el hilo del worker antes de morir
+worker.failed(str)           → ui.on_error + self._thread.quit + worker.deleteLater
+self._thread.finished        → self._thread.deleteLater
+```
+
+Notas: guardar el `ProcessResult` en un atributo (`self._last_result`) para que
+el botón "Guardar Excel…" lo use después; poner refs a None en el slot de
+`thread.finished` DESPUÉS de los deleteLater (nunca antes de que el hilo muera).
+
+### 6.4 Rutas de datos (`paths.py`) — decisión D4
+
+- Default nuevo: `~/Documents/CFDI-Processor/` con subcarpetas `BovedaCFDI/`,
+  `Reports/`, `Logs/`. El nombre "AdminXML" MUERE (era el nombre de la app
+  competidora). Usar rutas de usuario reales de Windows (p. ej.
+  `QStandardPaths.DocumentsLocation` o expanduser), NO relativas al repo.
+- `last_used_directory.txt` vive en la nueva carpeta (o QSettings; elegir uno y
+  documentarlo — la configuración completa llega en F3).
+- La app NO migra automáticamente datos de `D:\AdminXML` — solo cambia el
+  default para lo nuevo. Documentar en README que el usuario puede copiar su
+  bóveda manualmente.
+
+### 6.5 `core.py`: errores por archivo
+
+- `ProcessResult` gana `errors: list[tuple[str, str]]` → (ruta del archivo,
+  razón legible). `parse_xml_file_by_version` deja de tragar excepciones en
+  silencio: captura y devuelve/registra la razón (XML malformado, versión no
+  soportada, etc.).
+- La GUI muestra en DONE: "X errores — ver detalle en el registro" y lista cada
+  archivo fallido en el log. El CLI los imprime.
+
+### 6.6 `excel_exporter.py`
+
+- QUITAR el `try/except Exception` global: las excepciones SE PROPAGAN; la capa
+  de UI/CLI decide cómo mostrarlas (caso típico a probar: el .xlsx destino
+  abierto en Excel → PermissionError → mensaje claro "cierra el archivo").
+- Extraer UN helper `autosize_columns(worksheet, dataframe)` y usarlo 3 veces
+  (hoy el bucle está triplicado).
+- `print()` → `logging`.
+
+### 6.7 Logging (`log_setup.py`)
+
+- `logging` estándar: RotatingFileHandler en `Documents/CFDI-Processor/Logs/cfdi-app.log`
+  (maxBytes ~1MB, 3 backups), formato con timestamp/nivel/módulo.
+- `sys.excepthook` global: loguea el traceback completo Y muestra un
+  QMessageBox.critical si hay QApplication viva. Con `pythonw` este es el ÚNICO
+  ojo sobre crashes.
+- Los callbacks `on_log` hacia la UI se mantienen; el archivo es paralelo.
+
+### 6.8 Limpieza de repo
+
+- `git rm -r --cached __pycache__`
+- `git rm --cached "CFDI_Processor_App/Reports/*.xlsx"` (contienen RFCs reales)
+- Borrar `test_output.xlsx` del tracking si está rastreado.
+- Actualizar README.md a la realidad post-F2 (estructura, cómo correr, .bats).
+
+### 6.9 Criterios de aceptación de F2
+
+1. Flujo completo en máquina real Windows: seleccionar carpeta → procesar →
+   resumen visible en ventana → clic "Guardar Excel…" → diálogo EN PRIMER
+   PLANO → exportar → enlace para abrir. Sin congelamientos, repetible N veces
+   sin reiniciar la app.
+2. `run_gui.bat` no deja consola; `run_gui_debug.bat` sí la muestra.
+3. Con el .xlsx destino abierto en Excel, la app muestra un error claro (no
+   éxito falso).
+4. Un XML corrupto en la carpeta aparece listado con su razón en el registro.
+5. `Documents/CFDI-Processor/Logs/cfdi-app.log` existe y registra la sesión.
+6. Suite de pruebas verde (`python -m unittest discover -s tests`), incluyendo
+   pruebas nuevas de: transiciones de estado, `ProcessResult.errors`, y que el
+   exporter propaga PermissionError.
+7. `git ls-files` sin `.pyc` ni `.xlsx`.
+
+## 7. Decisiones registradas (con fecha y por qué)
+
+| # | Decisión | Fecha | Razón |
+|---|---|---|---|
+| D1 | GUI con **PySide6** (LGPL), NO PyQt6 (GPL/comercial) | 2026-06 | LGPL permite app cerrada/comercial gratis con pip install normal; PyQt6 exigiría pagar u open-sourcear |
+| D2 | Front-ends delgados sobre `core.py` único | 2026-06 | Una sola implementación del pipeline para GUI/CLI/futura DB |
+| D3 | Alcance F2 = SOLO estabilización (sin SQLite ni settings completos) | 2026-07-01 | Cerrar de verdad F1 antes de abrir F3/F4; decisión del dueño |
+| D4 | Datos en `Documents\CFDI-Processor\`; muere el nombre "AdminXML" | 2026-07-01 | Nombre heredado de la app competidora (MiAdminXML); raíz de disco frágil; decisión del dueño |
+| D5 | Migración a paquete `src/cfdi_app/` autorizada; parsers conservan nombre y lógica | 2026-07-01 | Escalar a DB/SAT/settings; la regla de aislamiento por versión NO se toca |
+| D6 | Distribución (.exe) SIN prisa — solo el dueño usa la app | 2026-07-01 | F9 se dispara cuando aparezca el primer usuario externo |
+| D7 | `main.py` (Tkinter) se retira; `cli.py` es el fallback sin GUI | 2026-07-01 | Evitar doble mantenimiento; reversible si el dueño objeta |
+| D8 | Ningún diálogo modal automático; solo por clic del usuario | 2026-07-01 | Corrección de fondo del Bug 1 (modal invisible = app "congelada") |
+| D9 | Búsqueda: SQL+índices (F4/F5) → FTS5 (F5) → vectores `sqlite-vec` solo como F11 opcional | 2026-07-01 | El caso de uso real ("filtro tipo Excel") es SQL puro; FTS5 da texto libre gratis y nativo; los embeddings exigen modelo local pesado o API que enviaría datos fiscales a terceros — imprudente hoy. Esquema F4 se diseña para poder agregarlos sin rediseño |
+| D10 | Ediciones Lite/Pro/Top = un solo codebase con feature gating por licencia (§5.2); jamás forks separados | 2026-07-01 | Requisito del dueño: al salir CFDI 4.1/5.0, actualizar UN paquete y que las tres ediciones se actualicen a la vez. Un dev solo no puede mantener tres códigos. La regla de aislamiento de parsers ya garantiza el flujo |
+
+## 8. Instrucciones para el modelo constructor de F2
+
+1. Lee este archivo completo + `PROMPT.md` antes de tocar código.
+2. Respeta las reglas intocables (§2). Los parsers SOLO se mueven de carpeta.
+3. Construye en pasos pequeños y ejecutables; corre la suite tras cada paso.
+4. Verifica el hilo REAL (no solo offscreen con diálogos simulados — así se
+   escapó el Bug 1): pide al dueño probar en su máquina antes de dar F2 por
+   cerrada. Los criterios de §6.9 son la definición de "hecho".
+5. El dueño es hispanohablante, desarrollador solo, y quiere validar decisiones:
+   pregunta antes de desviarte de este documento.
+
+## 9. Resultado de F2 (construida 2026-07-03)
+
+F2 se construyó completa siguiendo §6. Resumen de lo que cambió respecto al
+diseño (todo alineado, sin desviaciones de fondo):
+
+- **Estructura de paquete**: `src/cfdi_app/` con `parsers/`, `exporters/`,
+  `ui/` (`state.py`, `worker.py`, `main_window.py`), `paths.py`, `log_setup.py`,
+  `core.py`, `cli.py`, `__main__.py`. `pyproject.toml` con `src/` layout;
+  instalado con `pip install -e .`. Los 3 parsers y `constants.py` se movieron
+  con `git mv` — solo cambió su línea de import (`from cfdi_app.constants
+  import ...`), cero cambios de lógica. `main.py` (Tkinter) retirado (D7);
+  `gui.py`/`core.py`/`cli.py` de la raíz eliminados (reemplazados por el paquete).
+- **Bug 1 (corrección de fondo):** implementada la máquina de estados de §6.2
+  como módulo Qt-free (`ui/state.py`, función pura `widget_states_for`). El
+  botón **"Guardar Excel…"** solo se habilita en estado DONE y su diálogo nace
+  del clic del usuario — nunca se abre automáticamente desde un callback de
+  hilo. Se agregó un botón explícito **"Abrir archivo"** (habilitado tras
+  guardar) en vez del `QMessageBox.question` automático original.
+- **Bug 2 (corrección):** `run_gui.bat` → `start "" pythonw -m cfdi_app`;
+  nuevo `run_gui_debug.bat` → `python -m cfdi_app` con consola. `log_setup.py`
+  implementado (RotatingFileHandler + `sys.excepthook`) como prerequisito.
+- **Rutas de datos (D4):** `paths.py` resuelve a
+  `~/Documents/CFDI-Processor/{BovedaCFDI,Reports,Logs}` — verificado en esta
+  máquina: `BASE_APP_DIR = C:\Users\<usuario>\Documents\CFDI-Processor`.
+- **Errores por archivo (§6.5):** `parse_xml_file_by_version` ahora devuelve
+  `(data, error_message)`; `ProcessResult.errors` lista cada archivo fallido
+  con su razón. Se corrigió además un defecto no listado originalmente: un
+  `.zip` corrupto (`BadZipFile`) antes tumbaba TODO `process_path` sin control;
+  ahora se reporta como error de ese zip y el resto de la corrida continúa.
+- **`excel_exporter.py` (§6.6):** se quitó el `try/except` global (las
+  excepciones se propagan); se extrajo `autosize_columns()` como helper único
+  (antes triplicado); `print()` → `logging`.
+- **Limpieza de repo (§6.8):** `git rm -r --cached __pycache__`; se retiró del
+  tracking (y del disco) todo `CFDI_Processor_App/` — contenía 7 reportes
+  `.xlsx` con un RFC de apariencia real (`GOOH841231EPA`) y un
+  `last_used_directory.txt`. El historial de git aún conserva esos datos; si el
+  repo se comparte públicamente algún día, evaluar `git filter-repo` para
+  purgarlos del historial también. `.gitignore` actualizado.
+- **Pruebas:** 22 verdes (`python -m unittest discover -s tests`) — las 9
+  originales + 13 nuevas: transiciones de la máquina de estados
+  (`tests/test_ui_state.py`), errores por archivo incluyendo XML corrupto,
+  versión no soportada y ZIP dañado (`tests/test_core.py`), y propagación de
+  `PermissionError` del exporter (`tests/test_exporter.py`).
+- **README.md** actualizado a la estructura y flujo post-F2.
+
+### Verificación realizada (y su límite honesto)
+
+Se ejecutó un end-to-end headless (`QT_QPA_PLATFORM=offscreen`) usando un
+**QThread real** (no una llamada síncrona al worker, que es como se escapó el
+Bug 1 la vez anterior): seleccionar carpeta → Procesar → esperar el hilo real →
+Guardar Excel → Abrir archivo → reprocesar sin reiniciar. Se instrumentó un
+"guardia anti-Bug-1" que hace fallar la prueba si CUALQUIER diálogo modal se
+abre fuera de un clic explícito del usuario — no se disparó ninguno.
+
+**Límite honesto:** esto corre en modo offscreen (sin ventana visible real de
+Windows). El síntoma original del Bug 1 involucraba específicamente el
+comportamiento de foco/z-order de diálogos nativos de Windows, que offscreen no
+puede reproducir al 100%. Por eso el **criterio 6.9.1 permanece abierto**: el
+dueño debe correr `run_gui.bat` en su máquina real y confirmar el flujo
+completo antes de considerar F2 verdaderamente cerrada. Si algo sigue fallando
+ahí, revisar primero `Documents\CFDI-Processor\Logs\cfdi-app.log`.
+
+### Pendiente para cerrar F2 al 100%
+- [ ] Dueño confirma en Windows real: `run_gui.bat` no deja consola, el flujo
+  completo (seleccionar → procesar → guardar → abrir) no se congela y es
+  repetible.
+- [ ] Dueño confirma que, con el .xlsx destino abierto en Excel, aparece un
+  error claro (no éxito falso).
+- [ ] Decidir con el dueño cuál sigue: F3 (directorio de trabajo +
+  auto-organización) o F4 (bóveda SQLite) — ambas ya no tienen bloqueo técnico
+  pendiente de F2.

@@ -1,16 +1,15 @@
 """
 Pruebas basicas (smoke tests) para los parsers de CFDI.
 
-Objetivo de Step 0: una red de seguridad ANTES de construir la GUI.
-Si la GUI (u otro cambio) rompe un parser, estas pruebas lo detectan
-de inmediato, separando "bug del parser" de "bug de la GUI".
+Objetivo: una red de seguridad para detectar si un cambio rompe un parser,
+separando "bug del parser" de "bug de la GUI/CLI".
 
 Se ejecutan SIN dependencias extra:
     python -m unittest discover -s tests
 
 Las pruebas reflejan la logica de despacho real de
-main.parse_xml_file_by_version, pero importan los parsers directamente
-para no acoplar las pruebas a Tkinter / la UI.
+cfdi_app.core.parse_xml_file_by_version, pero importan los parsers
+directamente para no acoplar las pruebas a la UI.
 
 NOTA DE COBERTURA: los fixtures en XML-Test/ son todos CFDI 4.0
 (Invoice y Nomina). Aun NO hay fixtures de CFDI 3.3 ni de Pagos 2.0,
@@ -22,20 +21,22 @@ import sys
 import unittest
 import xml.etree.ElementTree as ET
 
-# Permitir importar los modulos del parser que viven en la raiz del repo.
+# Red de seguridad: si el paquete no esta instalado en modo editable
+# (`pip install -e .`), permitir importarlo igual desde src/.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
+SRC_DIR = os.path.join(REPO_ROOT, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
 
-from xml_parser_40 import parse_cfdi_40_invoice  # noqa: E402
-from xml_parser_33 import parse_cfdi_33_invoice  # noqa: E402
-from pagos_parser_20 import parse_cfdi_pago_20    # noqa: E402
+from cfdi_app.parsers.xml_parser_40 import parse_cfdi_40_invoice  # noqa: E402
+from cfdi_app.parsers.xml_parser_33 import parse_cfdi_33_invoice  # noqa: E402
+from cfdi_app.parsers.pagos_parser_20 import parse_cfdi_pago_20    # noqa: E402
 
 FIXTURE_DIR = os.path.join(REPO_ROOT, "XML-Test")
 
 
 def dispatch(xml_file_path):
-    """Replica main.parse_xml_file_by_version sin importar la UI."""
+    """Replica cfdi_app.core.parse_xml_file_by_version sin importar la UI."""
     root = ET.parse(xml_file_path).getroot()
     version = root.get("Version")
     tipo = root.get("TipoDeComprobante")

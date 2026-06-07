@@ -1,12 +1,13 @@
-# --- core.py ---
+# --- cfdi_app/core.py ---
 # Pipeline de procesamiento CFDI SIN interfaz de usuario.
 #
 # Este modulo es la "fuente unica de verdad" del flujo carpeta -> parseo -> Excel.
-# Tanto la version de consola (main.py) como la GUI (gui.py) lo importan, para que
+# Tanto el CLI (cli.py) como la GUI (ui/main_window.py) lo importan, para que
 # exista UNA sola implementacion del procesamiento. Aqui NO hay Tkinter, PySide6,
 # print() de UI ni input(): solo logica pura + callbacks opcionales para reportar
-# avance. Esto respeta la regla de aislamiento por version de PROMPT.md: el
-# despacho vive aqui, pero cada version sigue teniendo su propio modulo parser.
+# avance. Esto respeta la regla de aislamiento por version de PROMPT.md/ROADMAP.md:
+# el despacho vive aqui, pero cada version sigue teniendo su propio modulo parser.
+import logging
 import os
 import platform
 import subprocess
@@ -16,53 +17,22 @@ import shutil
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-# Parsers aislados por version (NO se fusionan; ver PROMPT.md).
-from xml_parser_33 import parse_cfdi_33_invoice
-from xml_parser_40 import parse_cfdi_40_invoice
-from pagos_parser_20 import parse_cfdi_pago_20
-from excel_exporter import export_to_excel
+# Parsers aislados por version (NO se fusionan; ver PROMPT.md/ROADMAP.md Sec.2).
+from cfdi_app.parsers.xml_parser_33 import parse_cfdi_33_invoice
+from cfdi_app.parsers.xml_parser_40 import parse_cfdi_40_invoice
+from cfdi_app.parsers.pagos_parser_20 import parse_cfdi_pago_20
+from cfdi_app.exporters.excel_exporter import export_to_excel
+from cfdi_app import paths
 
-# --- Directorios base de la aplicacion -------------------------------------
-# Relativo a una carpeta conceptual "AdminXML" dos niveles por encima del script.
-# (Pendiente: hacerlo configurable cuando exista el directorio de trabajo del
-#  usuario; ver "Planned: working directory & auto-organization" en PROMPT.md.)
-BASE_APP_DIR = os.path.abspath(os.path.join(
-    os.path.dirname(__file__), "..", "..", "AdminXML"))
-BOVEDA_XML_DIR = os.path.join(BASE_APP_DIR, "BovedaCFDI")
-REPORTS_DIR = os.path.join(BASE_APP_DIR, "Reports")
-LAST_USED_DIR_FILE = os.path.join(REPORTS_DIR, "last_used_directory.txt")
+logger = logging.getLogger(__name__)
 
-
-def create_initial_directories():
-    """Crea los directorios base de la aplicacion si no existen."""
-    os.makedirs(BASE_APP_DIR, exist_ok=True)
-    os.makedirs(BOVEDA_XML_DIR, exist_ok=True)
-    os.makedirs(REPORTS_DIR, exist_ok=True)
-
-
-def read_last_used_directory():
-    """Devuelve el ultimo directorio usado (si sigue siendo valido) o ''. """
-    if os.path.exists(LAST_USED_DIR_FILE):
-        try:
-            with open(LAST_USED_DIR_FILE, "r") as f:
-                last_dir = f.read().strip()
-            if os.path.isdir(last_dir):
-                return last_dir
-        except Exception:
-            pass
-    return ""
-
-
-def save_last_used_directory(directory):
-    """Guarda el directorio seleccionado para recordarlo en la proxima sesion."""
-    if not directory:
-        return
-    try:
-        os.makedirs(REPORTS_DIR, exist_ok=True)
-        with open(LAST_USED_DIR_FILE, "w") as f:
-            f.write(directory)
-    except Exception:
-        pass
+# Re-exportar rutas para no romper a quien ya las importaba desde core.
+BASE_APP_DIR = paths.BASE_APP_DIR
+BOVEDA_XML_DIR = paths.BOVEDA_XML_DIR
+REPORTS_DIR = paths.REPORTS_DIR
+create_initial_directories = paths.create_initial_directories
+read_last_used_directory = paths.read_last_used_directory
+save_last_used_directory = paths.save_last_used_directory
 
 
 # --- Despacho por version (logica de deteccion) ----------------------------
@@ -71,7 +41,13 @@ def parse_xml_file_by_version(xml_file_path):
     Lee el XML para determinar su version CFDI y llama al parser apropiado.
     Detecta tambien si es un CFDI de Pagos 2.0.
 
-    Devuelve un dict (Invoice/Nomina), una lista de dicts (Pagos) o None.
+    Devuelve una tupla (data, error_message):
+        - data: dict (Invoice/Nomina), lista de dicts (Pagos), o None.
+        - error_message: None si tuvo exito; una razon legible si no.
+
+    ROADMAP.md Sec.6.5: antes esta funcion devolvia solo None en cualquier
+    fallo, sin registrar la causa. Ahora el llamador (process_path) puede
+    reportar, por archivo, POR QUE fallo.
     """
     try:
         tree = ET.parse(xml_file_path)
@@ -81,45 +57,73 @@ def parse_xml_file_by_version(xml_file_path):
 
         # Priorizar deteccion de Pagos 2.0
         if tipo_comprobante == "P" and cfdi_version == "4.0":
-            return parse_cfdi_pago_20(xml_file_path)
+            return parse_cfdi_pago_20(xml_file_path), None
         elif cfdi_version == "3.3":
-            return parse_cfdi_33_invoice(xml_file_path)
+            return parse_cfdi_33_invoice(xml_file_path), None
         elif cfdi_version == "4.0":
-            return parse_cfdi_40_invoice(xml_file_path)
+            return parse_cfdi_40_invoice(xml_file_path), None
         else:
-            return None
-    except ET.ParseError:
-        return None
-    except Exception:
-        return None
+            return None, (
+                f"Version/TipoDeComprobante no soportado "
+                f"(Version='{cfdi_version}', TipoDeComprobante='{tipo_comprobante}')")
+    except ET.ParseError as e:
+        return None, f"XML malformado: {e}"
+    except Exception as e:
+        logger.exception("Error inesperado al parsear %s", xml_file_path)
+        return None, f"Error inesperado: {e}"
 
 
-def process_zip_file(zip_path):
-    """Extrae los XMLs de un .zip a una carpeta temporal y los procesa."""
-    temp_dir = tempfile.mkdtemp()
+def process_zip_file(zip_path, on_log=None):
+    """Extrae los XMLs de un .zip a una carpeta temporal y los procesa.
+
+    Devuelve (extracted_data, errors) donde errors es una lista de tuplas
+    (etiqueta, razon). Un .zip corrupto ya NO propaga la excepcion sin
+    control (antes tumbaba todo process_path); se reporta como error del zip.
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
     extracted_data = []
+    errors = []
+    zip_name = os.path.basename(zip_path)
+
     try:
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(temp_dir)
+        temp_dir = tempfile.mkdtemp()
+    except OSError as e:
+        return extracted_data, [(zip_name, f"No se pudo crear carpeta temporal: {e}")]
+
+    try:
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(temp_dir)
+        except (zipfile.BadZipFile, OSError) as e:
+            errors.append((zip_name, f"Archivo ZIP invalido o dañado: {e}"))
+            return extracted_data, errors
 
         for root_dir, _, files in os.walk(temp_dir):
             for file in files:
                 if file.lower().endswith(".xml"):
                     xml_path = os.path.join(root_dir, file)
-                    data = parse_xml_file_by_version(xml_path)
-                    if data:
+                    label = f"{zip_name}::{file}"
+                    log(f" - Procesando {label}...")
+                    data, error = parse_xml_file_by_version(xml_path)
+                    if error:
+                        errors.append((label, error))
+                    elif data:
                         if isinstance(data, list):
                             extracted_data.extend(data)
                         else:
                             extracted_data.append(data)
     finally:
-        shutil.rmtree(temp_dir)  # Limpiar archivos temporales
-    return extracted_data
+        shutil.rmtree(temp_dir, ignore_errors=True)  # Limpiar archivos temporales
+
+    return extracted_data, errors
 
 
 # --- Resultado del procesamiento -------------------------------------------
 class ProcessResult:
-    """Contenedor simple con los datos parseados y sus contadores."""
+    """Contenedor simple con los datos parseados, contadores y errores."""
 
     def __init__(self):
         self.all_parsed_data = []
@@ -128,6 +132,7 @@ class ProcessResult:
         self.pagos_data = []
         self.processed_count = 0
         self.error_count = 0
+        self.errors = []  # lista de tuplas (archivo_o_etiqueta, razon)
 
     @property
     def has_data(self):
@@ -163,6 +168,7 @@ def process_path(input_folder, on_log=None, on_progress=None):
 
     if not input_folder or not os.path.isdir(input_folder):
         log(f"Ruta invalida: {input_folder}")
+        result.errors.append((str(input_folder), "Ruta invalida o no es un directorio"))
         return result
 
     targets = _collect_target_files(input_folder)
@@ -177,22 +183,29 @@ def process_path(input_folder, on_log=None, on_progress=None):
         lower = file.lower()
         if lower.endswith(".xml"):
             log(f" - Procesando {file}...")
-            parsed_data = parse_xml_file_by_version(path)
-            if parsed_data:
+            parsed_data, error = parse_xml_file_by_version(path)
+            if error:
+                result.error_count += 1
+                result.errors.append((path, error))
+                log(f"   ERROR: {error}")
+            elif parsed_data:
                 if isinstance(parsed_data, list):
                     result.all_parsed_data.extend(parsed_data)
                     result.processed_count += len(parsed_data)
                 else:
                     result.all_parsed_data.append(parsed_data)
                     result.processed_count += 1
-            else:
-                result.error_count += 1
         elif lower.endswith(".zip"):
             log(f" - Descomprimiendo y procesando {file}...")
-            zip_results = process_zip_file(path)
+            zip_results, zip_errors = process_zip_file(path, on_log=on_log)
             if zip_results:
                 result.all_parsed_data.extend(zip_results)
                 result.processed_count += len(zip_results)
+            if zip_errors:
+                result.error_count += len(zip_errors)
+                result.errors.extend(zip_errors)
+                for label, reason in zip_errors:
+                    log(f"   ERROR ({label}): {reason}")
 
     # Separar por tipo para las hojas del Excel.
     result.invoice_data = [
@@ -299,7 +312,12 @@ def build_default_filename(parsed_data_list):
 
 
 def export_report(result, output_path):
-    """Exporta el ProcessResult a un archivo Excel multi-hoja."""
+    """Exporta el ProcessResult a un archivo Excel multi-hoja.
+
+    Puede propagar excepciones (p. ej. PermissionError si el archivo destino
+    esta abierto en Excel) - ver ROADMAP.md Sec.6.6. El llamador decide como
+    mostrarlas.
+    """
     export_to_excel(result.invoice_data, result.nomina_data,
                     result.pagos_data, output_path)
 
