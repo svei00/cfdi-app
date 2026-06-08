@@ -131,10 +131,13 @@ layer), not Step 0 or the first GUI.
 ## Roadmap
 Full phase list (F0–F11), dependencies, and the current phase marker now live
 in **ROADMAP.md §5** — that table supersedes any step list here. Quick recap of
-where things stand: F0 (hygiene) and F1 (GUI wrapper) done; **F2 (GUI
-stabilization — bug fixes + package restructure) done**, see ROADMAP.md §6 for
-what was built and §6.9 for acceptance criteria. Next up: F3 (working
-directory + auto-organization) or F4 (SQLite bóveda).
+where things stand: F0 (hygiene), F1 (GUI wrapper) and **F2 (GUI stabilization
+— bug fixes + package restructure) CLOSED and owner-confirmed on real Windows
+(2026-07-04)**. **Next up: F2.5 — results viewer** (in-GUI table with per-sheet
+tabs, totals row for subtotal/descuento/IVA/total, "Abrir carpeta" button,
+minimal settings.json; full definition in ROADMAP.md §11, hard constraint: Qt
+Model/View, no QTableWidget). Then F3 (working directory + auto-organization),
+then F4 (SQLite bóveda).
 
 Long-term goal: package and sell it (Windows first; users are on Windows), as
 **Lite/Pro/Top editions sharing one codebase** (ROADMAP.md §5.2, decision D10).

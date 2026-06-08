@@ -1,14 +1,30 @@
-# ROADMAP.md — CFDI Processor: diagnóstico, fases y arquitectura F2
+# ROADMAP.md — CFDI Processor: diagnóstico, fases y arquitectura
 
-> **Documento maestro para construir la Fase 2 (Estabilización y reestructura).**
-> Generado en la fase de análisis/diseño (2026-07-01). Autocontenido: un modelo
-> (Opus 4.8 / Sonnet 5) debe poder construir F2 leyendo SOLO este archivo más el
-> código. Complementa a `PROMPT.md` (spec general del producto) y a
-> `Roadmap_Aplicacion_CFDI.md` (visión estratégica de largo plazo).
+> **Documento maestro del proyecto.** Nació para construir la Fase 2
+> (2026-07-01) y desde entonces es el registro vivo de fases, decisiones y
+> arquitectura. Autocontenido: un modelo debe poder construir la fase siguiente
+> leyendo SOLO este archivo más el código. Complementa a `PROMPT.md` (spec
+> general del producto) y a `Roadmap_Aplicacion_CFDI.md` (visión estratégica de
+> largo plazo).
 
 ---
 
-## 1. Estado actual (2026-07-01)
+## 0. Gobernanza de este documento (registrada 2026-07-04)
+
+- ROADMAP.md es un documento **VIVO** y pertenece al **dueño del proyecto**,
+  no a ningún modelo "director" en particular. Fable, Opus, Sonnet u otro
+  pueden dirigir el diseño o la construcción en distintos momentos; el
+  documento y sus decisiones no cambian de autoridad por ello.
+- Cualquier decisión registrada (D1 en adelante) **puede revisarse** si su
+  razón ya no aplica o si la visión del dueño cambió. Revertir una decisión
+  con causa no es un error: es parte del proceso.
+- Lo único innegociable es el **registro**: toda decisión nueva, modificada o
+  revertida se anota en §7 con fecha y razón, para que quien construya después
+  entienda el porqué sin re-derivarlo.
+
+---
+
+## 1. Estado al inicio del diseño de F2 (2026-07-01 — HISTÓRICO; el estado post-F2 está en §9)
 
 - Entorno de desarrollo: Windows 11, Python 3.14, deps en `requirements.txt`
   (pandas, openpyxl, PySide6 6.11 — instalada y verificada). Pruebas con
@@ -109,8 +125,9 @@ app (negra porque la GUI no imprime nada), y el .bat espera a que termine.
 |---|---|---|---|---|
 | F0 | Higiene | requirements, .gitignore, 9 pruebas | — | ✅ Hecha |
 | F1 | GUI envolvente | GUI PySide6 sobre carpeta→parseo→Excel | F0 | ⚠️ Construida, rota (Bugs 1/2) |
-| F2 | Estabilización y reestructura | GUI estable + logging + paquete + datos en Documents + limpieza git | F1 | ✅ Construida y verificada 2026-07-03 (ver §9) — **falta confirmación del dueño en máquina real (criterio 6.9.1)** |
-| **F3** | **Directorio de trabajo + auto-organización** | Settings persistentes, selector de working dir, archivado `BovedaCFDI\{RFC}\{Emitidas|Recibidas}\{YYYY}\{MM}` (año/mes = fecha de timbrado) | F2 | ⬅️ **CANDIDATA A SIGUIENTE FASE** (o F4, a decidir con el dueño) |
+| F2 | Estabilización y reestructura | GUI estable + logging + paquete + datos en Documents + limpieza git | F1 | ✅ **CERRADA** — construida 2026-07-03, confirmada por el dueño en máquina real 2026-07-04 (ver §9) |
+| **F2.5** | **Visor de resultados en la GUI** | Tabla del lote procesado con pestañas espejo del Excel (Invoices/Nómina/Pagos) + fila de TOTALES (subtotal, descuento, IVA, total) + botón "Abrir carpeta" + `settings.json` mínimo que recuerda la última carpeta de guardado (D14). **Restricción dura D13: Qt Model/View — `QTableView` + `QAbstractTableModel`; `QTableWidget` PROHIBIDO.** Sin SQLite. Definición completa en §11 | F2 | ⬅️ **SIGUIENTE FASE A CONSTRUIR** (decidida 2026-07-04) |
+| F3 | Directorio de trabajo + auto-organización | Settings persistentes (EXTIENDE el `settings.json` sembrado en F2.5, no crea otro mecanismo), checkbox "usar siempre la misma ruta de guardado" (D14), selector de working dir, archivado `BovedaCFDI\{RFC}\{Emitidas|Recibidas}\{YYYY}\{MM}` (año/mes = fecha de timbrado) | F2.5 | Pendiente |
 | F4 | Bóveda SQLite | Parseo único, metadatos en DB, dedup por UUID, búsqueda | F2 | Pendiente |
 | F5 | Reportes y filtros | Tablas Qt Model/View, filtros RFC/mes/tipo + **búsqueda de texto FTS5** (nativa de SQLite, cero dependencias) sobre descripciones de conceptos | F4 | Pendiente |
 | F6 | SAT — descarga | CIEC primero, FIEL después; capa aislada e.firma | F2 (guarda en F4) | Pendiente |
@@ -173,6 +190,22 @@ desarrollador solo es **un único codebase con compuertas de funcionalidad
   no infranqueable. Suficiente para el mercado objetivo (contadores/PyMEs);
   endurecer solo si el negocio lo justifica.
 
+### 5.3 Nota de diseño a futuro: evolución a shell/dashboard (registrada 2026-07-04)
+
+La GUI actual (`ui/main_window.py`) es una pantalla de propósito único (el
+"procesador"). Conforme lleguen módulos con cara propia (F4 bóveda/búsqueda,
+F5 reportes, F6 descarga SAT, F7 validación, F8 cancelación), la app
+necesitará una capa de navegación — un shell/dashboard con accesos que abran
+cada módulo, como en la visión original del dueño (`Roadmap_Aplicacion_CFDI.md`).
+
+- **Estado: dirección registrada, NO es una fase todavía.** Decisión del dueño
+  (2026-07-04): el "cuándo" se decide al llegar el segundo módulo con cara
+  propia (F4/F5) — fijarlo hoy sería especular.
+- **Regla para no pintarse en una esquina mientras tanto:** toda pantalla
+  nueva (incluido el visor de F2.5) se construye como **widget autocontenido**
+  (no lógica pegada a `MainWindow`), de modo que colgarla de un shell futuro
+  sea ensamblaje, no reescritura.
+
 ## 6. Arquitectura de F2 (lo que hay que construir)
 
 ### 6.1 Estructura de paquete (migración autorizada por el dueño)
@@ -211,6 +244,12 @@ cfdi-app/
   parsers, exporter) SE MUEVEN al paquete y desaparecen de la raíz.
 - `main.py` (Tkinter/consola) SE RETIRA: `cli.py` cubre el uso sin GUI.
   *Decisión reversible; si el dueño pide conservarlo, congelarlo como legacy.*
+  **ACLARACIÓN (2026-07-04, hubo confusión):** `main.py` y `cli.py` son DOS
+  cosas distintas. `main.py` era el script con diálogo Tkinter de "elegir
+  carpeta" — ese es el retirado. `cli.py` NUNCA se eliminó: se movió al
+  paquete y sigue vivo (`python -m cfdi_app.cli <carpeta> -o salida.xlsx`,
+  sin diálogos). Retiro de `main.py` confirmado por el dueño el 2026-07-04
+  (ver D7 y la regla D11 que nació de este episodio).
 - Para que `python -m cfdi_app` funcione desde la raíz sin instalar: incluir la
   configuración mínima (pyproject.toml con `pip install -e .`, o ajustar
   sys.path en los .bat — preferir pyproject + editable install).
@@ -340,21 +379,31 @@ el botón "Guardar Excel…" lo use después; poner refs a None en el slot de
 | D4 | Datos en `Documents\CFDI-Processor\`; muere el nombre "AdminXML" | 2026-07-01 | Nombre heredado de la app competidora (MiAdminXML); raíz de disco frágil; decisión del dueño |
 | D5 | Migración a paquete `src/cfdi_app/` autorizada; parsers conservan nombre y lógica | 2026-07-01 | Escalar a DB/SAT/settings; la regla de aislamiento por versión NO se toca |
 | D6 | Distribución (.exe) SIN prisa — solo el dueño usa la app | 2026-07-01 | F9 se dispara cuando aparezca el primer usuario externo |
-| D7 | `main.py` (Tkinter) se retira; `cli.py` es el fallback sin GUI | 2026-07-01 | Evitar doble mantenimiento; reversible si el dueño objeta |
+| D7 | `main.py` (Tkinter) se retira; `cli.py` es el fallback sin GUI. **Confirmada por el dueño 2026-07-04**: no se restaura (los contadores objetivo no usan launchers de bajo nivel). NOTA: `main.py` (picker Tkinter) ≠ `cli.py` (argumentos, sin diálogos) — `cli.py` sigue vivo en `src/cfdi_app/cli.py` | 2026-07-01 | Evitar doble mantenimiento; reversible si el dueño objeta. La ejecución sin consulta previa motivó la regla D11 |
 | D8 | Ningún diálogo modal automático; solo por clic del usuario | 2026-07-01 | Corrección de fondo del Bug 1 (modal invisible = app "congelada") |
 | D9 | Búsqueda: SQL+índices (F4/F5) → FTS5 (F5) → vectores `sqlite-vec` solo como F11 opcional | 2026-07-01 | El caso de uso real ("filtro tipo Excel") es SQL puro; FTS5 da texto libre gratis y nativo; los embeddings exigen modelo local pesado o API que enviaría datos fiscales a terceros — imprudente hoy. Esquema F4 se diseña para poder agregarlos sin rediseño |
 | D10 | Ediciones Lite/Pro/Top = un solo codebase con feature gating por licencia (§5.2); jamás forks separados | 2026-07-01 | Requisito del dueño: al salir CFDI 4.1/5.0, actualizar UN paquete y que las tres ediciones se actualicen a la vez. Un dev solo no puede mantener tres códigos. La regla de aislamiento de parsers ya garantiza el flujo |
+| D11 | **REGLA DURA DE PROCESO:** eliminar funcionalidad YA existente y funcionando requiere consultar al dueño ANTES de ejecutar la eliminación — aunque una decisión de diseño previa ya la contemple como "reversible" | 2026-07-04 | D7 se ejecutó en la construcción de F2 sin consulta previa. El dueño no objetó el QUÉ (main.py no vuelve) sino el CÓMO (no se le preguntó antes, ni se le dieron los pros/contras). Diseñar una eliminación no es lo mismo que ejecutarla |
+| D12 | El parpadeo cosmético de consola al lanzar `run_gui.bat` se ACEPTA hasta F9; NO se agrega lanzador `.vbs` intermedio | 2026-07-04 | Es `cmd.exe` interpretando el `.bat` antes de que `pythonw` tome control — cosmético, no funcional (el Bug 2 real ya está corregido). El `.exe` de PyInstaller (F9) lo elimina por diseño. Decisión del dueño. NO volver a reportarlo como bug |
+| D13 | El Visor de resultados (MUST del dueño) se construye YA como fase **F2.5**, con patrón **Model/View obligatorio** (`QTableView` + `QAbstractTableModel`; `QTableWidget` PROHIBIDO). Sin SQLite y sin andamiaje de repositorios extra | 2026-07-04 | Ver totales (subtotal/descuento/IVA/total) sin abrir Excel es estándar en las herramientas competidoras. El modo "lote actual" NO es desechable: sigue siendo útil después de F4 ("muéstrame lo que acabo de procesar"); F4 solo AGREGA el modo historial/periodos sobre la MISMA vista. El andamiaje SQLite anticipado se descartó por sobre-ingeniería: la frontera del modelo Qt ya es la costura donde F4 se conectará |
+| D14 | Memoria de la ruta de GUARDADO del Excel: F2.5 siembra un `settings.json` mínimo (recordar última carpeta de guardado, comportamiento por defecto); el checkbox "usar siempre la misma ruta fija" y el resto de la configuración llegan en F3 SOBRE ese mismo mecanismo | 2026-07-04 | Gap de UX detectado por el dueño en las pruebas reales de F2 (el diálogo siempre proponía Reports e ignoraba dónde guardó la última vez). Un solo mecanismo de settings: F3 extiende, no duplica; el `last_used_directory.txt` actual se absorbe como clave `last_input_dir` del mismo `settings.json` |
 
-## 8. Instrucciones para el modelo constructor de F2
+## 8. Instrucciones para modelos constructores (de cualquier fase)
 
 1. Lee este archivo completo + `PROMPT.md` antes de tocar código.
 2. Respeta las reglas intocables (§2). Los parsers SOLO se mueven de carpeta.
 3. Construye en pasos pequeños y ejecutables; corre la suite tras cada paso.
 4. Verifica el hilo REAL (no solo offscreen con diálogos simulados — así se
-   escapó el Bug 1): pide al dueño probar en su máquina antes de dar F2 por
-   cerrada. Los criterios de §6.9 son la definición de "hecho".
+   escapó el Bug 1): pide al dueño probar en su máquina antes de dar una fase
+   por cerrada. Los criterios de aceptación de la fase son la definición de
+   "hecho".
 5. El dueño es hispanohablante, desarrollador solo, y quiere validar decisiones:
    pregunta antes de desviarte de este documento.
+6. **REGLA DURA (D11):** NUNCA elimines funcionalidad ya existente y
+   funcionando sin consultar al dueño ANTES de ejecutar la eliminación —
+   aunque este documento la marque como decidida o "reversible". Diseñar una
+   eliminación no es lo mismo que ejecutarla: la ejecución siempre se
+   confirma primero con el dueño.
 
 ## 9. Resultado de F2 (construida 2026-07-03)
 
@@ -366,8 +415,12 @@ diseño (todo alineado, sin desviaciones de fondo):
   `core.py`, `cli.py`, `__main__.py`. `pyproject.toml` con `src/` layout;
   instalado con `pip install -e .`. Los 3 parsers y `constants.py` se movieron
   con `git mv` — solo cambió su línea de import (`from cfdi_app.constants
-  import ...`), cero cambios de lógica. `main.py` (Tkinter) retirado (D7);
-  `gui.py`/`core.py`/`cli.py` de la raíz eliminados (reemplazados por el paquete).
+  import ...`), cero cambios de lógica. `main.py` (Tkinter) retirado (D7,
+  confirmado por el dueño 2026-07-04). **Precisión importante:** `cli.py` NO se
+  eliminó — el archivo de la raíz se movió al paquete y sigue funcionando como
+  `src/cfdi_app/cli.py`; `gui.py`/`core.py` de la raíz fueron reemplazados por
+  sus equivalentes dentro del paquete. Lo único retirado de verdad fue
+  `main.py` (el picker Tkinter).
 - **Bug 1 (corrección de fondo):** implementada la máquina de estados de §6.2
   como módulo Qt-free (`ui/state.py`, función pura `widget_states_for`). El
   botón **"Guardar Excel…"** solo se habilita en estado DONE y su diálogo nace
@@ -418,12 +471,98 @@ dueño debe correr `run_gui.bat` en su máquina real y confirmar el flujo
 completo antes de considerar F2 verdaderamente cerrada. Si algo sigue fallando
 ahí, revisar primero `Documents\CFDI-Processor\Logs\cfdi-app.log`.
 
-### Pendiente para cerrar F2 al 100%
-- [ ] Dueño confirma en Windows real: `run_gui.bat` no deja consola, el flujo
-  completo (seleccionar → procesar → guardar → abrir) no se congela y es
-  repetible.
-- [ ] Dueño confirma que, con el .xlsx destino abierto en Excel, aparece un
-  error claro (no éxito falso).
-- [ ] Decidir con el dueño cuál sigue: F3 (directorio de trabajo +
-  auto-organización) o F4 (bóveda SQLite) — ambas ya no tienen bloqueo técnico
-  pendiente de F2.
+### Cierre de F2 — CONFIRMADO por el dueño (2026-07-04)
+- [x] Windows real: `run_gui.bat` no deja consola (solo el parpadeo cosmético
+  de `cmd.exe`, aceptado — ver D12); el flujo completo (seleccionar → procesar
+  → guardar → abrir) no se congela y es repetible sin reiniciar la app —
+  el dueño corrió múltiples procesos seguidos.
+- [x] Prueba de bloqueo de Excel: guardar un reporte DISTINTO teniendo otro
+  archivo abierto en Excel funcionó sin falso error; guardar sobre EL MISMO
+  archivo abierto mostró correctamente el mensaje de archivo
+  bloqueado/abierto. Comportamiento exactamente el esperado (criterio 6.9.3).
+- [x] Siguiente fase decidida: ver tabla de fases §5 (decisión del visor,
+  D13/D14).
+
+**F2 está cerrada al 100%. Bug 1 y Bug 2: resueltos y confirmados.**
+
+## 10. Backlog de UX (registrado, SIN acción por ahora)
+
+Observaciones del dueño en las pruebas reales de F2. Se registran para pulido
+futuro (probablemente junto con settings en F3, o al probar con más
+contadores). NO son bugs; NO actuar sin que el dueño lo pida.
+
+1. **Abrir archivo tras guardar:** hoy es un botón explícito ("Abrir archivo"),
+   por diseño anti-Bug-1 (D8). Funciona, pero algunos contadores quizá
+   prefieran que el sistema pregunte automáticamente al terminar de guardar.
+   Candidato a preferencia configurable ("preguntar al terminar: sí/no") cuando
+   exista el sistema de settings (F3). Decidir idealmente con feedback de
+   usuarios reales.
+2. **Parpadeo del `.bat` al lanzar:** decisión tomada (D12) — se acepta hasta
+   el `.exe` de F9. No re-reportar.
+3. **Ruta de guardado del Excel:** resuelto en diseño (D14) — memoria en F2.5,
+   checkbox en F3.
+4. **Orden/disposición de los botones:** el dueño comentó que el flujo se
+   siente "un poco directo" con el orden actual de botones. Sin propuesta
+   concreta aún; revisar cuando el visor (F2.5) reorganice la ventana de todos
+   modos.
+
+## 11. Arquitectura de F2.5 — Visor de resultados (SIGUIENTE FASE A CONSTRUIR)
+
+Decidida por el dueño el 2026-07-04 (D13, D14). Alcance deliberadamente corto.
+El modelo constructor debe leer también §8 (reglas para constructores, incluida
+la regla dura D11) y §6.2 (reglas de oro anti-Bug-1, que siguen vigentes).
+
+### 11.1 Entrega
+
+Dentro de la GUI existente, al terminar un procesamiento (estado `DONE`):
+
+1. **Tabla de resultados del lote actual**, con pestañas espejo de las hojas
+   del Excel (Invoices / Nómina / Pagos), reutilizando los órdenes de columna
+   de `constants.py`. Columnas visibles mínimas en Invoices: Tipo, RFC Emisor,
+   RFC Receptor, Fecha, Subtotal, Descuento, IVA (o total de impuestos), Total,
+   UUID. Los datos salen del `ProcessResult` que ya vive en memoria
+   (`_last_result`) — NO se re-parsea nada.
+2. **Fila/panel de TOTALES por pestaña**: suma de Subtotal, Descuento, IVA y
+   Total de los registros mostrados. Formato de moneda mexicana.
+3. **Botón "Abrir carpeta"**: abre en el Explorador la carpeta contenedora del
+   Excel guardado (disponible junto a "Abrir archivo", misma condición de
+   habilitación). Cubre el caso "solo quiero llegar al archivo, no abrirlo".
+4. **`settings.json` mínimo** en la carpeta de datos de la app (D14):
+   - `last_input_dir` — absorbe el `last_used_directory.txt` actual (migrarlo
+     y retirar el .txt; esto es un reemplazo de mecanismo interno, no una
+     eliminación de funcionalidad visible — la funcionalidad se conserva).
+   - `last_save_dir` — nueva: al guardar un Excel con éxito, se recuerda esa
+     carpeta y el siguiente "Guardar Excel…" la propone como default. Si no
+     existe aún, se propone `Reports` como hoy.
+
+### 11.2 Restricciones duras
+
+- **D13 — Model/View obligatorio:** `QTableView` + `QAbstractTableModel`
+  (subclase propia alimentada por listas de dicts del `ProcessResult`).
+  **`QTableWidget` PROHIBIDO** — metería los datos dentro del widget y ese
+  trabajo sí sería desechable en F4.
+- La vista NO debe conocer la fuente de datos: en F4 se conectará un segundo
+  modelo (respaldado por SQLite) a la MISMA vista para el modo
+  historial/periodos. El modo "lote actual" se conserva post-F4.
+- **§5.3 — widget autocontenido:** el visor se construye como widget propio
+  (p. ej. `ui/results_view.py`), no como lógica pegada dentro de
+  `MainWindow`, para poder colgarlo de un shell futuro sin reescribir.
+- Las reglas de oro anti-Bug-1 (§6.2) siguen aplicando: ningún diálogo modal
+  automático; "Abrir carpeta" nace de un clic.
+- NADA de SQLite en esta fase (ni esquema, ni repositorios anticipados).
+
+### 11.3 Criterios de aceptación de F2.5
+
+1. Tras procesar, la tabla muestra los registros del lote con sus pestañas, y
+   las SUMAS coinciden con las del Excel exportado (verificar contra un lote
+   real de XML-Test).
+2. "Abrir carpeta" abre el Explorador en la carpeta del último Excel guardado.
+3. Guardar en una carpeta distinta → el siguiente "Guardar Excel…" propone esa
+   carpeta (persiste entre sesiones vía `settings.json`).
+4. `last_used_directory.txt` migrado a `settings.json` sin perder el valor; la
+   carpeta de entrada se sigue recordando igual que antes.
+5. Suite verde con pruebas nuevas: el modelo de tabla (conteos y sumas
+   correctas por tipo) y la lógica de settings (leer/escribir/migrar) — ambas
+   probables sin ventana real.
+6. Confirmación del dueño en máquina real (regla §8.4), incluyendo re-procesar
+   varias veces y verificar que la tabla se actualiza con cada lote.
