@@ -126,7 +126,7 @@ app (negra porque la GUI no imprime nada), y el .bat espera a que termine.
 | F0 | Higiene | requirements, .gitignore, 9 pruebas | — | ✅ Hecha |
 | F1 | GUI envolvente | GUI PySide6 sobre carpeta→parseo→Excel | F0 | ⚠️ Construida, rota (Bugs 1/2) |
 | F2 | Estabilización y reestructura | GUI estable + logging + paquete + datos en Documents + limpieza git | F1 | ✅ **CERRADA** — construida 2026-07-03, confirmada por el dueño en máquina real 2026-07-04 (ver §9) |
-| **F2.5** | **Visor de resultados en la GUI** | Tabla del lote procesado con pestañas espejo del Excel (Invoices/Nómina/Pagos) + fila de TOTALES (subtotal, descuento, IVA, total) + botón "Abrir carpeta" + `settings.json` mínimo que recuerda la última carpeta de guardado (D14). **Restricción dura D13: Qt Model/View — `QTableView` + `QAbstractTableModel`; `QTableWidget` PROHIBIDO.** Sin SQLite. Definición completa en §11 | F2 | ⬅️ **SIGUIENTE FASE A CONSTRUIR** (decidida 2026-07-04) |
+| F2.5 | Visor de resultados en la GUI | Tabla del lote procesado con pestañas espejo del Excel (Invoices/Nómina/Pagos) + fila de TOTALES (subtotal, descuento, IVA, total) + botón "Abrir carpeta" + `settings.json` mínimo que recuerda la última carpeta de guardado (D14) + filtro incremental (D15). **Restricción dura D13: Qt Model/View — `QTableView` + `QAbstractTableModel`; `QTableWidget` PROHIBIDO.** Sin SQLite. Definición completa en §11 | F2 | ✅ Construida 2026-07-04 (ver §12) — **falta confirmación del dueño en máquina real** |
 | F3 | Directorio de trabajo + auto-organización | Settings persistentes (EXTIENDE el `settings.json` sembrado en F2.5, no crea otro mecanismo), checkbox "usar siempre la misma ruta de guardado" (D14), selector de working dir, archivado `BovedaCFDI\{RFC}\{Emitidas|Recibidas}\{YYYY}\{MM}` (año/mes = fecha de timbrado) | F2.5 | Pendiente |
 | F4 | Bóveda SQLite | Parseo único, metadatos en DB, dedup por UUID, búsqueda | F2 | Pendiente |
 | F5 | Reportes y filtros | Tablas Qt Model/View, filtros RFC/mes/tipo + **búsqueda de texto FTS5** (nativa de SQLite, cero dependencias) sobre descripciones de conceptos | F4 | Pendiente |
@@ -387,6 +387,7 @@ el botón "Guardar Excel…" lo use después; poner refs a None en el slot de
 | D12 | El parpadeo cosmético de consola al lanzar `run_gui.bat` se ACEPTA hasta F9; NO se agrega lanzador `.vbs` intermedio | 2026-07-04 | Es `cmd.exe` interpretando el `.bat` antes de que `pythonw` tome control — cosmético, no funcional (el Bug 2 real ya está corregido). El `.exe` de PyInstaller (F9) lo elimina por diseño. Decisión del dueño. NO volver a reportarlo como bug |
 | D13 | El Visor de resultados (MUST del dueño) se construye YA como fase **F2.5**, con patrón **Model/View obligatorio** (`QTableView` + `QAbstractTableModel`; `QTableWidget` PROHIBIDO). Sin SQLite y sin andamiaje de repositorios extra | 2026-07-04 | Ver totales (subtotal/descuento/IVA/total) sin abrir Excel es estándar en las herramientas competidoras. El modo "lote actual" NO es desechable: sigue siendo útil después de F4 ("muéstrame lo que acabo de procesar"); F4 solo AGREGA el modo historial/periodos sobre la MISMA vista. El andamiaje SQLite anticipado se descartó por sobre-ingeniería: la frontera del modelo Qt ya es la costura donde F4 se conectará |
 | D14 | Memoria de la ruta de GUARDADO del Excel: F2.5 siembra un `settings.json` mínimo (recordar última carpeta de guardado, comportamiento por defecto); el checkbox "usar siempre la misma ruta fija" y el resto de la configuración llegan en F3 SOBRE ese mismo mecanismo | 2026-07-04 | Gap de UX detectado por el dueño en las pruebas reales de F2 (el diálogo siempre proponía Reports e ignoraba dónde guardó la última vez). Un solo mecanismo de settings: F3 extiende, no duplica; el `last_used_directory.txt` actual se absorbe como clave `last_input_dir` del mismo `settings.json` |
+| D15 | F2.5 incluye un filtro incremental (caja de búsqueda única) sobre el lote actual: texto libre (subcadena, sin distinguir mayúsculas) contra RFC Emisor/Receptor, Nombre Emisor/Receptor, Factura (Serie+Folio), UUID y **Conceptos** (descripción de línea) — MÁS comparación numérica con operadores `<`,`>`,`<=`,`>=` sobre montos, **columna por defecto: Total** (no Subtotal). Los totales se recalculan sobre las filas visibles tras filtrar | 2026-07-04 | El dueño pidió poder buscar "tela" en el concepto de una factura sin recordar RFC/nombre del proveedor, y filtrar por monto (`<2000`) para revisar deducibilidad. Se verificó en datos reales que `Nombre Emisor`, `Nombre Receptor` y `Conceptos` YA son strings planos en cada registro (`Conceptos` = concatenación de descripciones con `' \| '`) — el "texto libre en varias columnas" cuesta lo mismo que buscar solo por RFC, no es una versión "más compleja". El operador numérico sí es un mecanismo aparte (comparación, no substring) pero igual de barato dado el `QSortFilterProxyModel` ya mandatado (D13). Default a Total (no Subtotal) por confirmación explícita del dueño, con base en criterio fiscal práctico, no en la costumbre heredada de un exsocio |
 
 ## 8. Instrucciones para modelos constructores (de cualquier fase)
 
@@ -523,7 +524,18 @@ Dentro de la GUI existente, al terminar un procesamiento (estado `DONE`):
    UUID. Los datos salen del `ProcessResult` que ya vive en memoria
    (`_last_result`) — NO se re-parsea nada.
 2. **Fila/panel de TOTALES por pestaña**: suma de Subtotal, Descuento, IVA y
-   Total de los registros mostrados. Formato de moneda mexicana.
+   Total de los registros **visibles tras aplicar el filtro** (ver punto 5).
+   Formato de moneda mexicana.
+5. **Filtro incremental (D15)**: una sola caja de búsqueda arriba de la tabla.
+   - Texto libre → subcadena (case-insensitive) contra RFC Emisor, Nombre
+     Emisor, RFC Receptor, Nombre Receptor, Factura, UUID, Conceptos.
+   - Empieza con `<`, `>`, `<=`, `>=` seguido de un número → comparación
+     numérica sobre **Total** (default) o la columna nombrada explícitamente
+     (p. ej. `subtotal<2000`).
+   - La lógica de coincidencia (`matches_search`) y de sumas
+     (`compute_totals`) vive en un módulo **Qt-free**, testeable sin ventana
+     (mismo patrón que `ui/state.py`); el `QSortFilterProxyModel` solo la
+     invoca.
 3. **Botón "Abrir carpeta"**: abre en el Explorador la carpeta contenedora del
    Excel guardado (disponible junto a "Abrir archivo", misma condición de
    habilitación). Cubre el caso "solo quiero llegar al archivo, no abrirlo".
@@ -566,3 +578,73 @@ Dentro de la GUI existente, al terminar un procesamiento (estado `DONE`):
    probables sin ventana real.
 6. Confirmación del dueño en máquina real (regla §8.4), incluyendo re-procesar
    varias veces y verificar que la tabla se actualiza con cada lote.
+
+## 12. Resultado de F2.5 (construida 2026-07-04)
+
+F2.5 se construyó completa siguiendo §11, en pasos chicos con pruebas entre
+cada uno (tal como pidió el dueño para poder revisar/administrar por partes).
+
+- **`ui/filtering.py`** (Qt-free, D15): `matches_search()` resuelve las dos
+  sintaxis de la caja de búsqueda — subcadena de texto sobre
+  RFC Emisor/Receptor, Nombre Emisor/Receptor, Factura, UUID y **Conceptos**
+  (se verificó con datos reales que `Nombre Emisor/Receptor` y `Conceptos` ya
+  son strings planos en cada registro — el texto libre no costó nada extra);
+  o comparación numérica (`<`, `>`, `<=`, `>=`) sobre un alias de campo
+  opcional, con **Total** como default (D14/D15 — decisión explícita del
+  dueño, no la costumbre heredada de "Subtotal"). Alias no reconocido degrada
+  a búsqueda de texto en vez de fallar. `compute_totals()` suma solo sobre los
+  registros ya filtrados.
+- **`ui/results_model.py`** / **`ui/results_proxy.py`**: `RecordTableModel`
+  (`QAbstractTableModel` genérico, reutilizado para Invoices/Nómina/Pagos) +
+  `RecordFilterProxyModel` (`QSortFilterProxyModel` delgado que solo LLAMA a
+  `matches_search()` — no reimplementa lógica). Cumple D13 al pie de la letra;
+  `QTableWidget` no se usó en ningún punto.
+- **`ui/results_view.py`**: `ResultsView` (autocontenido, sin conocer
+  `MainWindow` — cumple la regla de §5.3) con 3 pestañas (`TabConfig` por tipo
+  de documento), cada una con caja de búsqueda + tabla + fila de totales.
+  Nota de implementación: Pagos usa nombres de columna distintos
+  (`RFC Emisor CFDI`, `MontoTotalPagos`, sin campo `Conceptos`) — cada pestaña
+  tiene su propia configuración de campos, no se asumió un esquema único.
+- **`settings.py`** (D14): `settings.json` en `Documents/CFDI-Processor/` con
+  `last_input_dir` y `last_save_dir`. Migra una sola vez el
+  `last_used_directory.txt` legado de `paths.py` (sin borrarlo — queda como
+  fósil inofensivo). Corrupción del JSON cae a defaults sin tronar.
+- **`core.py`**: nuevo `open_containing_folder()` (Explorador con el archivo
+  seleccionado en Windows vía `explorer /select,`, con fallback a solo abrir
+  la carpeta).
+- **`ui/main_window.py`**: agrega el `ResultsView` a la ventana (visible en
+  estado DONE, se llena en `on_result()` — ANTES de que exista cualquier
+  `.xlsx`, tal como pidió el dueño), botón nuevo "Abrir carpeta", y el diálogo
+  de "Guardar Excel…" ahora propone `settings.get_last_save_dir()` en vez de
+  siempre `Reports`. `paths.read_last_used_directory/save_last_used_directory`
+  quedan sin usar por la GUI (reemplazados por `settings.py`) pero NO se
+  borraron del archivo — decisión conservadora, no rompen nada al quedar ahí.
+- **Pruebas:** 57 verdes (las 22 de F2 + 35 nuevas): `test_filtering.py` (15,
+  incluye el caso real "buscar tela sin saber el RFC"), `test_settings.py` (9,
+  con aislamiento de directorio temporal — nunca toca el `settings.json` real
+  del usuario), `test_results_view.py` (11, modelo/proxy/vista con datos reales
+  de `XML-Test`).
+
+### Verificación realizada (mismo estándar que F2)
+
+End-to-end headless con **QThread real** (no simulado): seleccionar carpeta →
+Procesar → visor se llena con 8 facturas → filtrar "pintura" reduce a 2 con
+totales recalculados → Guardar Excel (propone y usa la carpeta temporal
+simulando una ruta ya usada) → botones "Abrir archivo"/"Abrir carpeta" se
+habilitan y se invocan con la ruta correcta → `settings.json` contiene
+`last_input_dir` y `last_save_dir` correctos → reprocesar sin reiniciar la
+app. Guardia anti-Bug-1 activo durante toda la corrida: cero diálogos
+automáticos.
+
+**Límite honesto (igual que en F2):** verificado en modo offscreen, no en una
+ventana visible de Windows. El criterio de aceptación #6 (confirmación del
+dueño en máquina real) sigue abierto.
+
+### Pendiente para cerrar F2.5 al 100%
+- [ ] Dueño confirma en Windows real: el visor aparece tras procesar (antes de
+  guardar cualquier Excel), el filtro por concepto/monto funciona y los
+  totales se ven correctos, "Abrir carpeta" abre el Explorador en el lugar
+  correcto, y guardar dos veces en carpetas distintas hace que la segunda vez
+  proponga la última usada (no siempre Reports).
+- [ ] Decidir con el dueño la siguiente fase: F3 (directorio de trabajo +
+  auto-organización) o F4 (bóveda SQLite).

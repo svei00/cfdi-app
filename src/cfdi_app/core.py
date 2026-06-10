@@ -329,3 +329,17 @@ def open_file(path):
     else:
         opener = "open" if platform.system() == "Darwin" else "xdg-open"
         subprocess.call([opener, path])
+
+
+def open_containing_folder(path):
+    """Abre el explorador de archivos en la carpeta que contiene `path`,
+    seleccionando el archivo si el sistema operativo lo permite (Windows)."""
+    folder = os.path.dirname(path) or "."
+    if platform.system() == "Windows":
+        try:
+            subprocess.run(["explorer", f"/select,{os.path.normpath(path)}"])
+        except OSError:
+            os.startfile(folder)  # noqa: P204 (API de Windows)
+    else:
+        opener = "open" if platform.system() == "Darwin" else "xdg-open"
+        subprocess.call([opener, folder])

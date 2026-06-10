@@ -25,7 +25,8 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout, QWidget,
 )
 
-from cfdi_app import core, paths
+from cfdi_app import core, paths, settings
+from cfdi_app.ui.results_view import ResultsView
 from cfdi_app.ui.state import AppState, widget_states_for
 from cfdi_app.ui.worker import ProcessWorker
 
@@ -38,7 +39,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.resize(680, 520)
+        self.resize(900, 700)
 
         self.input_folder = ""
         self._state = AppState.IDLE
@@ -56,8 +57,8 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
 
-        # Recordar ultima carpeta usada.
-        last = paths.read_last_used_directory()
+        # Recordar ultima carpeta usada (settings.json - ver D14).
+        last = settings.get_last_input_dir()
         if last:
             self.input_folder = last
             self.folder_label.setText(last)
@@ -102,9 +103,13 @@ class MainWindow(QMainWindow):
         self.open_btn = QPushButton("Abrir archivo")
         self.open_btn.setEnabled(False)
         self.open_btn.clicked.connect(self.on_open_clicked)
+        self.open_folder_btn = QPushButton("Abrir carpeta")
+        self.open_folder_btn.setEnabled(False)
+        self.open_folder_btn.clicked.connect(self.on_open_folder_clicked)
         action_row.addWidget(self.process_btn)
         action_row.addWidget(self.save_btn)
         action_row.addWidget(self.open_btn)
+        action_row.addWidget(self.open_folder_btn)
         layout.addLayout(action_row)
 
         self.progress_bar = QProgressBar()
@@ -116,6 +121,12 @@ class MainWindow(QMainWindow):
         line.setFrameShape(QFrame.HLine)
         line.setFrameShadow(QFrame.Sunken)
         layout.addWidget(line)
+
+        # Visor de resultados (ROADMAP.md Sec.11): tabla del lote actual con
+        # filtro incremental y totales, ANTES de que exista cualquier Excel.
+        layout.addWidget(QLabel("Resultados:"))
+        self.results_view = ResultsView()
+        layout.addWidget(self.results_view, stretch=2)
 
         layout.addWidget(QLabel("Registro:"))
         self.log_view = QPlainTextEdit()
@@ -147,7 +158,7 @@ class MainWindow(QMainWindow):
     # --- Acciones (todas nacen de un clic del usuario) -----------------------
     @Slot()
     def on_select_folder(self):
-        start_dir = self.input_folder or paths.read_last_used_directory() or paths.BOVEDA_XML_DIR
+        start_dir = self.input_folder or settings.get_last_input_dir() or paths.BOVEDA_XML_DIR
         folder = QFileDialog.getExistingDirectory(
             self, "Seleccionar carpeta de XMLs CFDI", start_dir)
         if not folder:
@@ -155,13 +166,15 @@ class MainWindow(QMainWindow):
 
         self.input_folder = folder
         self.folder_label.setText(folder)
-        paths.save_last_used_directory(folder)
+        settings.set_last_input_dir(folder)
 
         # Una carpeta nueva invalida el resultado/archivo guardado anterior.
         self._last_result = None
         self._last_error = None
         self._last_saved_path = None
         self.open_btn.setEnabled(False)
+        self.open_folder_btn.setEnabled(False)
+        self.results_view.clear()
 
         self.append_log(f"Carpeta seleccionada: {folder}")
         self._apply_state(AppState.READY)
@@ -177,6 +190,8 @@ class MainWindow(QMainWindow):
         self._last_error = None
         self._last_saved_path = None
         self.open_btn.setEnabled(False)
+        self.open_folder_btn.setEnabled(False)
+        self.results_view.clear()
         self._apply_state(AppState.PROCESSING)
 
         # Patron canonico Qt (ROADMAP.md Sec.6.3): worker.finished dispara
@@ -230,6 +245,7 @@ class MainWindow(QMainWindow):
         )
         self.append_log(summary)
         self._log_errors(result.errors)
+        self.results_view.set_result(result)
 
     @Slot(str)
     def on_error(self, message):
@@ -258,7 +274,10 @@ class MainWindow(QMainWindow):
             return
 
         default_name = core.build_default_filename(self._last_result.all_parsed_data)
-        default_path = os.path.join(paths.REPORTS_DIR, default_name)
+        # D14: proponer la ultima carpeta donde se guardo un Excel; si no hay
+        # ninguna aun, caer a Reports (comportamiento original).
+        default_dir = settings.get_last_save_dir() or paths.REPORTS_DIR
+        default_path = os.path.join(default_dir, default_name)
         output_path, _ = QFileDialog.getSaveFileName(
             self, "Guardar Informe de Excel CFDI", default_path,
             "Archivos de Excel (*.xlsx)")
@@ -280,8 +299,10 @@ class MainWindow(QMainWindow):
             return
 
         self._last_saved_path = output_path
+        settings.set_last_save_dir(os.path.dirname(output_path))
         self.append_log(f"\nExcel guardado en: {output_path}")
         self.open_btn.setEnabled(True)
+        self.open_folder_btn.setEnabled(True)
 
     @Slot()
     def on_open_clicked(self):
@@ -291,3 +312,12 @@ class MainWindow(QMainWindow):
             core.open_file(self._last_saved_path)
         except Exception as exc:
             self.append_log(f"No se pudo abrir el archivo: {exc}")
+
+    @Slot()
+    def on_open_folder_clicked(self):
+        if not self._last_saved_path:
+            return
+        try:
+            core.open_containing_folder(self._last_saved_path)
+        except Exception as exc:
+            self.append_log(f"No se pudo abrir la carpeta: {exc}")
