@@ -16,6 +16,40 @@ from cfdi_app.ui import filtering
 from cfdi_app.ui.results_model import RecordTableModel
 from cfdi_app.ui.results_proxy import RecordFilterProxyModel
 
+# Paleta "Office/Excel Dark" (decision del dueno 2026-07-04, ver ROADMAP D16).
+# Aplicada SOLO a este widget (la tabla del visor) - NO es un tema de la app
+# completa. El resto de la ventana sigue el tema de Windows como antes; un
+# sistema de tema claro/oscuro para TODA la app (con autodeteccion del SO)
+# queda pendiente y registrado aparte (ver ROADMAP Sec.5.3/notas de tema).
+_DARK_TABLE_STYLESHEET = """
+QTableView {
+    background-color: #201F1E;
+    alternate-background-color: #292827;
+    color: #E8E6E3;
+    gridline-color: #484644;
+    selection-background-color: #004E8C;
+    selection-color: #FFFFFF;
+}
+QHeaderView::section {
+    background-color: #323130;
+    color: #FFFFFF;
+    padding: 4px;
+    border: 1px solid #484644;
+}
+QTabWidget::pane {
+    border: 1px solid #484644;
+}
+QTabBar::tab {
+    background: #2D2C2B;
+    color: #E8E6E3;
+    padding: 6px 14px;
+}
+QTabBar::tab:selected {
+    background: #201F1E;
+    color: #FFFFFF;
+}
+"""
+
 
 @dataclass(frozen=True)
 class TabConfig:
@@ -31,42 +65,71 @@ class TabConfig:
 INVOICE_TAB = TabConfig(
     key="invoice_data",
     title="Facturas",
-    display_columns=["Factura", "RFC Emisor", "Nombre Emisor", "RFC Receptor",
-                     "Nombre Receptor", "Fecha Emision", "SubTotal", "Descuento",
-                     "IVA 16%", "Total", "UUID"],
+    # Default ampliado 2026-07-04 (D18): de 12 a 23 columnas de las 62 del
+    # Excel. Criterio: se incluye lo que importa para revision contable
+    # (Tipo I/E, UsoCFDI, retenciones, forma/metodo de pago, tipo de cambio,
+    # UUID Relacion para credito/sustitucion). Se dejan fuera a proposito:
+    # residentes extranjeros (NumRegIdTrib/ResidenciaFiscal - caso raro),
+    # IEDU (CURP/Nivel Educativo Dependiente - solo escuelas privadas),
+    # tasas de IEPS individuales (3%/6%/7%/8%/9%/26.5%/30%/30.4%/53%/160% -
+    # "Total IEPS" ya las resume), direcciones completas (ocupan mucho ancho),
+    # y "Estado SAT"/"Verificado o Asoc." (siempre vacios hoy: la validacion
+    # SAT es F7, aun no implementada - una columna siempre en blanco es ruido).
+    # Todo esto sigue disponible en el Excel completo; el visor es un vistazo
+    # rapido, no un reemplazo del Excel. Selector de columnas configurable
+    # por el usuario: F3 (D18).
+    display_columns=["Factura", "Tipo", "Fecha Emision", "RFC Emisor", "Nombre Emisor",
+                     "RFC Receptor", "Nombre Receptor", "UsoCFDI", "LugarDeExpedicion",
+                     "SubTotal", "Descuento", "IVA 16%", "Retenido IVA", "Retenido ISR",
+                     "Total IEPS", "Total", "Moneda", "Tipo De Cambio", "FormaDePago",
+                     "Metodo de Pago", "Conceptos", "UUID", "UUID Relacion"],
     text_fields=["RFC Emisor", "Nombre Emisor", "RFC Receptor", "Nombre Receptor",
                 "Factura", "UUID", "Conceptos"],
     amount_fields={"total": "Total", "subtotal": "SubTotal", "descuento": "Descuento",
                   "iva": "IVA 16%"},
     default_amount_field="Total",
-    total_columns=["SubTotal", "Descuento", "IVA 16%", "Total"],
+    total_columns=["SubTotal", "Descuento", "IVA 16%", "Retenido IVA", "Retenido ISR",
+                  "Total IEPS", "Total"],
 )
 
 NOMINA_TAB = TabConfig(
     key="nomina_data",
     title="Nómina",
-    display_columns=["Factura", "RFC Emisor", "Nombre Emisor", "RFC Receptor",
-                     "Nombre Receptor", "Fecha Emision", "SubTotal",
-                     "Total Deducciones", "Total", "UUID"],
+    # Default ampliado 2026-07-04 (D18): agrega periodo de pago, identificadores
+    # de empleado (CURP/NSS) y desglose de percepciones - lo que un contador
+    # revisa primero en una nomina. IEDU (Nivel Educativo) queda fuera.
+    display_columns=["Factura", "Tipo Nomina", "Fecha Inicial Pago", "Fecha Final Pago",
+                     "RFC Emisor", "Nombre Emisor", "RFC Receptor", "Nombre Receptor",
+                     "CURP", "NSS", "SubTotal", "Total Sueldos", "Total Otros Pagos",
+                     "Total Deducciones", "Total", "Periodicidad Pago",
+                     "Registro Patronal", "Conceptos", "UUID"],
     text_fields=["RFC Emisor", "Nombre Emisor", "RFC Receptor", "Nombre Receptor",
                 "Factura", "UUID", "Conceptos"],
     amount_fields={"total": "Total", "subtotal": "SubTotal",
                   "deducciones": "Total Deducciones"},
     default_amount_field="Total",
-    total_columns=["SubTotal", "Total Deducciones", "Total"],
+    total_columns=["SubTotal", "Total Sueldos", "Total Otros Pagos",
+                  "Total Deducciones", "Total"],
 )
 
 PAGOS_TAB = TabConfig(
     key="pagos_data",
     title="Pagos",
+    # Default ampliado 2026-07-04 (D18): agrega a que factura aplica el pago
+    # (Serie/Folio Relacionado - clave para conciliar), avance de parcialidad
+    # y referencia bancaria. Se dejan fuera los ~90 campos de desglose de
+    # impuestos por tasa especifica (IEPS/IVA/retenciones por porcentaje) -
+    # rara vez se usan varios a la vez y estan completos en el Excel.
     display_columns=["Serie CFDI", "Folio CFDI", "RFC Emisor CFDI", "Nombre Emisor CFDI",
                      "RFC Receptor CFDI", "Nombre Receptor CFDI", "FechaPago",
-                     "MontoTotalPagos", "UUID CFDI"],
+                     "FormaDePagoP", "MontoTotalPagos", "Serie Relacionada",
+                     "Folio Relacionado", "NumParcialidad", "ImpSaldoAnt", "ImpPagado",
+                     "ImpSaldoInsoluto", "NumOperacion", "UUID CFDI"],
     text_fields=["RFC Emisor CFDI", "Nombre Emisor CFDI", "RFC Receptor CFDI",
                 "Nombre Receptor CFDI", "Serie CFDI", "Folio CFDI", "UUID CFDI"],
     amount_fields={"total": "MontoTotalPagos", "monto": "Monto Pago"},
     default_amount_field="MontoTotalPagos",
-    total_columns=["MontoTotalPagos"],
+    total_columns=["MontoTotalPagos", "ImpPagado"],
 )
 
 ALL_TABS = [INVOICE_TAB, NOMINA_TAB, PAGOS_TAB]
@@ -134,6 +197,7 @@ class ResultsView(QTabWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setStyleSheet(_DARK_TABLE_STYLESHEET)
         self._panels = {}
         for config in ALL_TABS:
             panel = _ResultsTabPanel(config)

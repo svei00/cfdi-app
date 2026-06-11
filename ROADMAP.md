@@ -127,7 +127,7 @@ app (negra porque la GUI no imprime nada), y el .bat espera a que termine.
 | F1 | GUI envolvente | GUI PySide6 sobre carpeta→parseo→Excel | F0 | ⚠️ Construida, rota (Bugs 1/2) |
 | F2 | Estabilización y reestructura | GUI estable + logging + paquete + datos en Documents + limpieza git | F1 | ✅ **CERRADA** — construida 2026-07-03, confirmada por el dueño en máquina real 2026-07-04 (ver §9) |
 | F2.5 | Visor de resultados en la GUI | Tabla del lote procesado con pestañas espejo del Excel (Invoices/Nómina/Pagos) + fila de TOTALES (subtotal, descuento, IVA, total) + botón "Abrir carpeta" + `settings.json` mínimo que recuerda la última carpeta de guardado (D14) + filtro incremental (D15). **Restricción dura D13: Qt Model/View — `QTableView` + `QAbstractTableModel`; `QTableWidget` PROHIBIDO.** Sin SQLite. Definición completa en §11 | F2 | ✅ Construida 2026-07-04 (ver §12) — **falta confirmación del dueño en máquina real** |
-| F3 | Directorio de trabajo + auto-organización | Settings persistentes (EXTIENDE el `settings.json` sembrado en F2.5, no crea otro mecanismo), checkbox "usar siempre la misma ruta de guardado" (D14), selector de working dir, archivado `BovedaCFDI\{RFC}\{Emitidas|Recibidas}\{YYYY}\{MM}` (año/mes = fecha de timbrado) | F2.5 | Pendiente |
+| F3 | Directorio de trabajo + auto-organización | Settings persistentes (EXTIENDE el `settings.json` sembrado en F2.5, no crea otro mecanismo), checkbox "usar siempre la misma ruta de guardado" (D14), **selector de columnas visibles del visor** (checkboxes, persistido — D18), selector de working dir, archivado `BovedaCFDI\{RFC}\{Emitidas|Recibidas}\{YYYY}\{MM}` (año/mes = fecha de timbrado) | F2.5 | Pendiente |
 | F4 | Bóveda SQLite | Parseo único, metadatos en DB, dedup por UUID, búsqueda | F2 | Pendiente |
 | F5 | Reportes y filtros | Tablas Qt Model/View, filtros RFC/mes/tipo + **búsqueda de texto FTS5** (nativa de SQLite, cero dependencias) sobre descripciones de conceptos | F4 | Pendiente |
 | F6 | SAT — descarga | CIEC primero, FIEL después; capa aislada e.firma | F2 (guarda en F4) | Pendiente |
@@ -205,6 +205,30 @@ cada módulo, como en la visión original del dueño (`Roadmap_Aplicacion_CFDI.m
   nueva (incluido el visor de F2.5) se construye como **widget autocontenido**
   (no lógica pegada a `MainWindow`), de modo que colgarla de un shell futuro
   sea ensamblaje, no reescritura.
+
+### 5.4 Nota de diseño a futuro: tema claro/oscuro de TODA la app (registrada 2026-07-04)
+
+"Temas claro/oscuro" ya estaba en la visión original del dueño
+(`Roadmap_Aplicacion_CFDI.md`, Fase 5 — "Interfaz y experiencia de usuario"),
+pero nunca bajó a una fase concreta de F0–F11. Se detectó al construir F2.5
+(el dueño notó que la tabla del visor heredaba el tema oscuro de Windows sin
+que nadie lo hubiera afinado para lectura de datos).
+
+- **Estado hoy (F2.5):** el `ResultsView` tiene una paleta oscura FIJA
+  ("Office/Excel Dark", D16) aplicada solo a ese widget. El resto de la app
+  sigue el tema del SO automáticamente (comportamiento por defecto de Qt), sin
+  cambios.
+- **Lo que falta (NO es una fase todavía):** un sistema real de tema para TODA
+  la app — detectar el tema del SO al arrancar, aplicar claro U oscuro de forma
+  consistente en cada widget (no solo la tabla), y idealmente permitir
+  cambiarlo en caliente si el SO cambia de tema. Esto es sustancialmente más
+  trabajo que colorear una tabla: toca la ventana completa, botones, diálogos,
+  etc.
+- Cuando se construya, la paleta fija de hoy en `ResultsView` deberá
+  reconciliarse con el tema activo (para no verse oscura a fuerza si el SO
+  está en modo claro). Candidato natural: junto con F9 ("Interfaz y UX") o
+  antes si el dueño lo prioriza — el "cuándo" queda abierto a su decisión,
+  igual que el shell/dashboard de Sec.5.3.
 
 ## 6. Arquitectura de F2 (lo que hay que construir)
 
@@ -388,6 +412,9 @@ el botón "Guardar Excel…" lo use después; poner refs a None en el slot de
 | D13 | El Visor de resultados (MUST del dueño) se construye YA como fase **F2.5**, con patrón **Model/View obligatorio** (`QTableView` + `QAbstractTableModel`; `QTableWidget` PROHIBIDO). Sin SQLite y sin andamiaje de repositorios extra | 2026-07-04 | Ver totales (subtotal/descuento/IVA/total) sin abrir Excel es estándar en las herramientas competidoras. El modo "lote actual" NO es desechable: sigue siendo útil después de F4 ("muéstrame lo que acabo de procesar"); F4 solo AGREGA el modo historial/periodos sobre la MISMA vista. El andamiaje SQLite anticipado se descartó por sobre-ingeniería: la frontera del modelo Qt ya es la costura donde F4 se conectará |
 | D14 | Memoria de la ruta de GUARDADO del Excel: F2.5 siembra un `settings.json` mínimo (recordar última carpeta de guardado, comportamiento por defecto); el checkbox "usar siempre la misma ruta fija" y el resto de la configuración llegan en F3 SOBRE ese mismo mecanismo | 2026-07-04 | Gap de UX detectado por el dueño en las pruebas reales de F2 (el diálogo siempre proponía Reports e ignoraba dónde guardó la última vez). Un solo mecanismo de settings: F3 extiende, no duplica; el `last_used_directory.txt` actual se absorbe como clave `last_input_dir` del mismo `settings.json` |
 | D15 | F2.5 incluye un filtro incremental (caja de búsqueda única) sobre el lote actual: texto libre (subcadena, sin distinguir mayúsculas) contra RFC Emisor/Receptor, Nombre Emisor/Receptor, Factura (Serie+Folio), UUID y **Conceptos** (descripción de línea) — MÁS comparación numérica con operadores `<`,`>`,`<=`,`>=` sobre montos, **columna por defecto: Total** (no Subtotal). Los totales se recalculan sobre las filas visibles tras filtrar | 2026-07-04 | El dueño pidió poder buscar "tela" en el concepto de una factura sin recordar RFC/nombre del proveedor, y filtrar por monto (`<2000`) para revisar deducibilidad. Se verificó en datos reales que `Nombre Emisor`, `Nombre Receptor` y `Conceptos` YA son strings planos en cada registro (`Conceptos` = concatenación de descripciones con `' \| '`) — el "texto libre en varias columnas" cuesta lo mismo que buscar solo por RFC, no es una versión "más compleja". El operador numérico sí es un mecanismo aparte (comparación, no substring) pero igual de barato dado el `QSortFilterProxyModel` ya mandatado (D13). Default a Total (no Subtotal) por confirmación explícita del dueño, con base en criterio fiscal práctico, no en la costumbre heredada de un exsocio |
+| D16 | Paleta **"Office/Excel Dark"** (`#201F1E` fondo, `#292827` fila alterna, `#E8E6E3` texto, `#323130`/`#FFFFFF` encabezado, `#004E8C` selección) aplicada como stylesheet **SOLO al `ResultsView`** (la tabla del visor) — NO es un tema de toda la app. El alcance de "campos buscables" del filtro (D15) NO se amplía en F2.5; queda igual, abierto a que el dueño pida agregar un campo puntual cuando haga falta | 2026-07-04 | El dueño pidió una paleta oscura legible sin que yo eligiera por él — se presentaron 4 opciones investigadas (VS Code Dark+, Material Dark, Solarized Dark, Office/Excel Dark) con sus hex y su razón de ser; eligió Office/Excel por familiaridad de sus usuarios contadores con el modo oscuro de Excel. Confirmó explícitamente NO ampliar el alcance del filtro ahora, solo dejarlo abierto a futuro |
+| D17 | Columna **"Conceptos" agregada como VISIBLE** en las pestañas Facturas y Nómina del visor (antes solo era buscable, no visible) | 2026-07-04 | Gap real detectado por el dueño: el filtro ya buscaba en Conceptos (encontraba "CFE" al escribir "energía"), pero al no ser columna visible no se podía ver POR QUÉ una fila coincidió. Todo campo que sea parte del filtro debe poder verse en la tabla |
+| D18 | Columnas VISIBLES del visor: **AMBAS cosas** — (1) default curado ampliado YA en F2.5 (Facturas 12→23, Nómina 11→19, Pagos 9→17, de un total de 62/~98/115 disponibles); (2) selector de columnas configurable por el usuario **construido en F3**, persistido en `settings.json`. Una columna sin dato en un registro dado queda simplemente EN BLANCO para esa fila (comportamiento estándar de cualquier hoja de cálculo) — NO se oculta/muestra columna por fila; eso sería un mecanismo distinto y no es lo que se pidió | 2026-07-04 | El dueño necesita ver hoy campos que antes no estaban (p. ej. UUID Relación, retenciones, forma/método de pago) sin esperar a F3, pero reconoce que el default curado nunca va a cubrir todos los casos de uso de todos los meses — de ahí que el selector configurable siga siendo necesario después. Todos los nombres de columna nuevos se verificaron contra datos reales (Facturas/Nómina) y contra `PAGOS_COLUMN_ORDER` (Pagos, sin fixtures de prueba) antes de aceptarlos — cero columnas fantasma |
 
 ## 8. Instrucciones para modelos constructores (de cualquier fase)
 
@@ -646,5 +673,41 @@ dueño en máquina real) sigue abierto.
   totales se ven correctos, "Abrir carpeta" abre el Explorador en el lugar
   correcto, y guardar dos veces en carpetas distintas hace que la segunda vez
   proponga la última usada (no siempre Reports).
+- [ ] Dueño confirma visualmente la paleta "Office/Excel Dark" (D16) en la
+  tabla del visor y que el número de fila queda 1..N tras ordenar (ver abajo).
 - [ ] Decidir con el dueño la siguiente fase: F3 (directorio de trabajo +
   auto-organización) o F4 (bóveda SQLite).
+- [x] Enfoque de columnas visibles decidido (D18): default ampliado YA
+  (Facturas 12→23, Nómina 11→19, Pagos 9→17) + selector configurable por el
+  usuario en F3. Ver detalle de qué se incluyó/excluyó y por qué en los
+  comentarios de `ui/results_view.py` junto a cada `TabConfig`.
+
+### Ronda 2 de ajustes (mismo día, tras la primera prueba real del dueño)
+
+El dueño probó F2.5 en su máquina y reportó 4 puntos; se resolvieron 3 de
+inmediato (bugs/decisiones sin ambigüedad) y 1 quedó como decisión abierta:
+
+1. **Bug real corregido:** el número de fila (encabezado vertical) quedaba
+   desordenado al ordenar una columna (mostraba p. ej. "2, 3, 1" en vez de
+   "1, 2, 3"). Causa: comportamiento por defecto de `QSortFilterProxyModel`,
+   que resuelve el encabezado vertical vía `mapToSource()` — el número queda
+   pegado a la posición ORIGINAL, no a la visual. Corregido en
+   `RecordFilterProxyModel.headerData()` devolviendo la posición visual
+   directamente para `Qt.Vertical`, sin pasar por el modelo fuente. Prueba de
+   regresión agregada (`test_vertical_header_stays_sequential_after_sorting`).
+2. **Gap real corregido (D17):** "Conceptos" ya era buscable pero no visible
+   en Facturas/Nómina — agregado a `display_columns` de ambas pestañas.
+3. **Paleta aplicada (D16):** "Office/Excel Dark" vía stylesheet Qt (QSS)
+   scopeado únicamente al `ResultsView` (no a la app completa).
+4. **Nota de tema completo registrada** (Sec.5.4): un sistema de tema
+   claro/oscuro para TODA la app (con autodetección del SO) ya estaba en la
+   visión original (`Roadmap_Aplicacion_CFDI.md`) pero nunca tuvo fase — ahora
+   está anotado explícitamente, sin fase asignada todavía.
+
+**Pregunta abierta que quedó pendiente de la respuesta del dueño:** para las
+columnas VISIBLES en la tabla (no el filtro, que se queda igual por D15/D16),
+¿F2.5 amplía el default curado ahora (más allá de los ~11 actuales, sin
+llegar a las 62 del Excel), y/o se construye en F3 un selector de columnas
+configurable por el usuario (checkboxes, persistido en `settings.json`)? Este
+selector es una función real de UI (comparable en tamaño a lo ya construido
+en F2.5), no un ajuste barato como ampliar `text_fields`.

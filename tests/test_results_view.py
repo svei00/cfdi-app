@@ -82,6 +82,17 @@ class TestRecordFilterProxyModel(unittest.TestCase):
         self.proxy.set_query(">1000")
         self.assertEqual(self.proxy.rowCount(), 1)
 
+    def test_vertical_header_stays_sequential_after_sorting(self):
+        # Bug reportado por el dueno: al ordenar, el numero de fila quedaba
+        # "pegado" a la posicion ORIGINAL (comportamiento por defecto de
+        # QSortFilterProxyModel) en vez de mostrar 1..N en el orden visual.
+        self.proxy.sort(2, Qt.AscendingOrder)  # columna "Total": 100.0, luego 5000.0
+        headers = [
+            self.proxy.headerData(row, Qt.Vertical, Qt.DisplayRole)
+            for row in range(self.proxy.rowCount())
+        ]
+        self.assertEqual(headers, ["1", "2"])
+
 
 class TestResultsView(unittest.TestCase):
     def setUp(self):
