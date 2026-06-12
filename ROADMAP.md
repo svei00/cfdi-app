@@ -703,6 +703,17 @@ inmediato (bugs/decisiones sin ambigüedad) y 1 quedó como decisión abierta:
    claro/oscuro para TODA la app (con autodetección del SO) ya estaba en la
    visión original (`Roadmap_Aplicacion_CFDI.md`) pero nunca tuvo fase — ahora
    está anotado explícitamente, sin fase asignada todavía.
+5. **Bug real corregido — la ventana ya no se podía encoger:** tras ampliar
+   columnas (D18), el dueño notó que la ventana dejó de poder reducirse de
+   tamaño. Causa real (verificada midiendo `minimumSizeHint()` capa por capa,
+   NO era la tabla): `totals_label` (la fila de totales) se creaba SIN
+   `setWordWrap(True)`, así que Qt calculaba el ancho mínimo de la ventana
+   como el necesario para mostrar TODA la línea de totales sin cortar — con
+   7 columnas de totales en Facturas, eso forzaba un mínimo de **1924px**.
+   Corregido activando `setWordWrap(True)` en `totals_label`
+   (`ui/results_view.py`): el mínimo bajó a **958px**, la ventana vuelve a
+   encogerse libremente y el texto se acomoda en varias líneas cuando hace
+   falta en vez de bloquear el resize.
 
 **Pregunta abierta que quedó pendiente de la respuesta del dueño:** para las
 columnas VISIBLES en la tabla (no el filtro, que se queda igual por D15/D16),

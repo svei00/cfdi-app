@@ -167,6 +167,12 @@ class _ResultsTabPanel(QWidget):
 
         self.totals_label = QLabel()
         self.totals_label.setStyleSheet("font-weight: bold; padding: 4px;")
+        # Sin word wrap, Qt calcula el ancho MINIMO de la ventana como el
+        # ancho necesario para mostrar TODA la linea de totales sin cortar -
+        # con muchas columnas de totales (Facturas: 7) eso bloqueaba encoger
+        # la ventana por debajo de ~1900px. Con wrap, el texto se acomoda en
+        # varias lineas cuando hace falta y la ventana vuelve a encoger libre.
+        self.totals_label.setWordWrap(True)
         layout.addWidget(self.totals_label)
 
         self._update_totals_label()
