@@ -126,10 +126,11 @@ app (negra porque la GUI no imprime nada), y el .bat espera a que termine.
 | F0 | Higiene | requirements, .gitignore, 9 pruebas | — | ✅ Hecha |
 | F1 | GUI envolvente | GUI PySide6 sobre carpeta→parseo→Excel | F0 | ⚠️ Construida, rota (Bugs 1/2) |
 | F2 | Estabilización y reestructura | GUI estable + logging + paquete + datos en Documents + limpieza git | F1 | ✅ **CERRADA** — construida 2026-07-03, confirmada por el dueño en máquina real 2026-07-04 (ver §9) |
-| F2.5 | Visor de resultados en la GUI | Tabla del lote procesado con pestañas espejo del Excel (Invoices/Nómina/Pagos) + fila de TOTALES (subtotal, descuento, IVA, total) + botón "Abrir carpeta" + `settings.json` mínimo que recuerda la última carpeta de guardado (D14) + filtro incremental (D15). **Restricción dura D13: Qt Model/View — `QTableView` + `QAbstractTableModel`; `QTableWidget` PROHIBIDO.** Sin SQLite. Definición completa en §11 | F2 | ✅ Construida 2026-07-04 (ver §12) — **falta confirmación del dueño en máquina real** |
+| F2.5 | Visor de resultados en la GUI | Tabla del lote procesado con pestañas espejo del Excel (Invoices/Nómina/Pagos) + fila de TOTALES (subtotal, descuento, IVA, total) + botón "Abrir carpeta" + `settings.json` mínimo que recuerda la última carpeta de guardado (D14) + filtro incremental (D15). **Restricción dura D13: Qt Model/View — `QTableView` + `QAbstractTableModel`; `QTableWidget` PROHIBIDO.** Sin SQLite. Definición completa en §11 | F2 | ✅ **CERRADA** — construida y confirmada por el dueño en máquina real 2026-07-04, con 3 rondas de ajustes (ver §12) |
+| F2.6 | Captura de campos faltantes (parsers, UNA sola ola) | Alcance completo definido por la auditoría §13.2 + §13.5: núcleo (InformacionGlobal, TipoRelacion, `RegimenFiscal Emisor` al Excel) + **3 bugs** (typo `TotalTrasladadoBaseIVAExento`→`TotalTrasladosBaseIVAExento`; bug estructural de Pagos que nulificaba TODOS los Totales, D27; clave muerta `15101501` → 35 claves oficiales familia 1510) + "Total Sueldos" resuelto con D26 + IEDU (`autRVOE`, `rfcPago`) + Nómina (NumDiasPagados, TipoContrato, TipoRegimen, NumEmpleado, etc.) + **captura por-concepto EN MEMORIA según el contrato de §14.5 (D25)**: `ConceptosDetalle` y los `*Detalle` de Nómina. Detalle completo del resultado en §15 | F2.5 ✅ + XSDs ✅ + diseño F4 §14 ✅ | ✅ **CONSTRUIDA** 2026-07-04 (ver §15) — falta confirmación del dueño en máquina real |
 | F3 | Directorio de trabajo + auto-organización | Settings persistentes (EXTIENDE el `settings.json` sembrado en F2.5, no crea otro mecanismo), checkbox "usar siempre la misma ruta de guardado" (D14), **selector de columnas visibles del visor** (checkboxes, persistido — D18), selector de working dir, archivado `BovedaCFDI\{RFC}\{Emitidas|Recibidas}\{YYYY}\{MM}` (año/mes = fecha de timbrado) | F2.5 | Pendiente |
-| F4 | Bóveda SQLite | Parseo único, metadatos en DB, dedup por UUID, búsqueda | F2 | Pendiente |
-| F5 | Reportes y filtros | Tablas Qt Model/View, filtros RFC/mes/tipo + **búsqueda de texto FTS5** (nativa de SQLite, cero dependencias) sobre descripciones de conceptos | F4 | Pendiente |
+| F4 | Bóveda SQLite | Parseo único, metadatos en DB, dedup por UUID, búsqueda. **Diseño técnico COMPLETO en §14** (2026-07-04): esquema híbrido relacional+JSON elástico (D24), tablas cfdi/conceptos/nomina/pagos/pagos_doctos, política de migraciones aditivas, campo nuevo = cero migración | F2 (diseño ✅; construcción pendiente) | Pendiente |
+| F5 | Reportes y filtros | Tablas Qt Model/View + **búsqueda de texto FTS5** (nativa de SQLite) sobre descripciones de conceptos + **filtro por periodo formalizado (D21)**: día, mes, año Y rango personalizado (campos "desde–hasta"), SIEMPRE consultando la bóveda SQLite — **JAMÁS recorriendo carpetas**. **Jerarquía dura de alcance (D21): 1º RFC, 2º Emitidas/Recibidas — todo filtro opera dentro de un RFC y una dirección ya elegidos; NUNCA se mezclan RFCs ni direcciones en un mismo resultado** | F4 | Pendiente |
 | F6 | SAT — descarga | CIEC primero, FIEL después; capa aislada e.firma | F2 (guarda en F4) | Pendiente |
 | F7 | Validación de estatus | Vigente/cancelado/no encontrado + caché | F6+F4 | Pendiente |
 | F8 | Cancelación | Motivo, folio sustituto, acuse, confirmaciones + bitácora | F6, F7 | Pendiente |
@@ -229,6 +230,32 @@ que nadie lo hubiera afinado para lectura de datos).
   está en modo claro). Candidato natural: junto con F9 ("Interfaz y UX") o
   antes si el dueño lo prioriza — el "cuándo" queda abierto a su decisión,
   igual que el shell/dashboard de Sec.5.3.
+
+### 5.5 Limitaciones estructurales del CFDI (registradas 2026-07-04, D22)
+
+Dos casos donde la limitación NO es "falta una columna" sino la naturaleza
+misma del CFDI. Se documentan para que nadie los re-reporte como bugs ni
+prometa resolverlos con más campos:
+
+1. **Detección de combustible = inferencia, no certeza.** El CFDI no tiene un
+   campo booleano "EsCombustible"; se infiere del producto/servicio. Hoy la
+   heurística es débil (4 códigos hardcodeados + palabras clave). Con el
+   catálogo oficial completo `c_ClaveProdServ` (pendiente de que el dueño suba
+   `catCFDI.xls`, ver §13) y la captura por-concepto (F2.6/F4), la detección
+   se vuelve **casi determinista**: exacta cuando el emisor clasificó bien su
+   clave. El riesgo residual queda solo en emisores que usan una clave
+   genérica/incorrecta — eso es un error del emisor, incorregible desde aquí.
+   Nivel de confianza esperado post-F2.6: alto, no absoluto.
+2. **Un REP/CFDI de Pagos NO prueba que el dinero se movió.** Un CFDI de
+   Pagos 2.0 es una DECLARACIÓN fiscal de que un pago se recibió/aplicó; un
+   PUE es lo que el comprobante dice. La confirmación real de que el dinero
+   "cayó" solo existe en el estado de cuenta bancario — una fuente de datos
+   completamente ajena al CFDI y fuera del alcance de TODAS las fases
+   actuales. **Conciliación bancaria** (importar estados de cuenta, nuevo
+   formato de entrada, matching heurístico pago↔movimiento) sería una función
+   de un orden de magnitud distinto: queda registrada como dirección futura
+   posible SIN fase asignada, igual que 5.3/5.4. No prometer verificación de
+   pagos "reales" en ninguna edición mientras esto no exista.
 
 ## 6. Arquitectura de F2 (lo que hay que construir)
 
@@ -415,6 +442,15 @@ el botón "Guardar Excel…" lo use después; poner refs a None en el slot de
 | D16 | Paleta **"Office/Excel Dark"** (`#201F1E` fondo, `#292827` fila alterna, `#E8E6E3` texto, `#323130`/`#FFFFFF` encabezado, `#004E8C` selección) aplicada como stylesheet **SOLO al `ResultsView`** (la tabla del visor) — NO es un tema de toda la app. El alcance de "campos buscables" del filtro (D15) NO se amplía en F2.5; queda igual, abierto a que el dueño pida agregar un campo puntual cuando haga falta | 2026-07-04 | El dueño pidió una paleta oscura legible sin que yo eligiera por él — se presentaron 4 opciones investigadas (VS Code Dark+, Material Dark, Solarized Dark, Office/Excel Dark) con sus hex y su razón de ser; eligió Office/Excel por familiaridad de sus usuarios contadores con el modo oscuro de Excel. Confirmó explícitamente NO ampliar el alcance del filtro ahora, solo dejarlo abierto a futuro |
 | D17 | Columna **"Conceptos" agregada como VISIBLE** en las pestañas Facturas y Nómina del visor (antes solo era buscable, no visible) | 2026-07-04 | Gap real detectado por el dueño: el filtro ya buscaba en Conceptos (encontraba "CFE" al escribir "energía"), pero al no ser columna visible no se podía ver POR QUÉ una fila coincidió. Todo campo que sea parte del filtro debe poder verse en la tabla |
 | D18 | Columnas VISIBLES del visor: **AMBAS cosas** — (1) default curado ampliado YA en F2.5 (Facturas 12→23, Nómina 11→19, Pagos 9→17, de un total de 62/~98/115 disponibles); (2) selector de columnas configurable por el usuario **construido en F3**, persistido en `settings.json`. Una columna sin dato en un registro dado queda simplemente EN BLANCO para esa fila (comportamiento estándar de cualquier hoja de cálculo) — NO se oculta/muestra columna por fila; eso sería un mecanismo distinto y no es lo que se pidió | 2026-07-04 | El dueño necesita ver hoy campos que antes no estaban (p. ej. UUID Relación, retenciones, forma/método de pago) sin esperar a F3, pero reconoce que el default curado nunca va a cubrir todos los casos de uso de todos los meses — de ahí que el selector configurable siga siendo necesario después. Todos los nombres de columna nuevos se verificaron contra datos reales (Facturas/Nómina) y contra `PAGOS_COLUMN_ORDER` (Pagos, sin fixtures de prueba) antes de aceptarlos — cero columnas fantasma |
+| D19 | Alcance de la auditoría de campos (§13): SOLO los 4 complementos en uso (Nómina 1.2, Pagos 2.0, IEDU, ImpLocal). Carta Porte, Comercio Exterior y auditoría del 3.3 quedan FUERA deliberadamente, sin preparación anticipada, con disparador documentado: primer cliente real que lo necesite | 2026-07-04 | Costo/beneficio del dueño: Carta Porte lo usan corporativos con ERP propio; CCE sin clientes hoy; 3.3 solo para auditorías fiscales históricas improbables. El aislamiento por versión hace que agregarlos después sea costo acotado (módulo nuevo + rama de despacho); preparar hoy sería gastar procesamiento en algo que quizá nunca se use |
+| D20 | Los campos faltantes se capturan en **UNA sola ola (fase F2.6)**, tras terminar la auditoría de complementos con los XSD. **Prerequisito duro: tag git de respaldo antes de tocar cualquier parser** — creado `v0.2.5-estable` (2026-07-04, árbol limpio, 58 pruebas verdes) como punto de restauración con nombre | 2026-07-04 | Elección del dueño: un solo cambio + un solo retesteo, no dos olas. Su condición explícita fue asegurar el respaldo "de cuando funcionaba"; git ya lo tenía committeado y el tag lo hace restaurable por nombre. Modificar `xml_parser_40.py` NO viola la regla de aislamiento (esta prohíbe fusionar versiones, no mantener el parser vigente), pero por D11 se consultó explícitamente |
+| D21 | Filtro por periodo (F5): granularidad día/mes/año + rango personalizado "desde–hasta". SIEMPRE consulta la bóveda SQLite; **JAMÁS recorre la estructura de carpetas** (las carpetas RFC/Emitidas·Recibidas/Año/Mes son para humanos; la DB para consultas). **Jerarquía dura: 1º RFC, 2º Emitidas/Recibidas — nunca se mezclan RFCs ni direcciones en un mismo resultado** | 2026-07-04 | Preocupación del dueño: filtrar periodos con la estructura de carpetas obligaría a "cd ../.." entre meses. La respuesta de diseño es que el archivado físico y la consulta son capas independientes (para eso existe F4). La jerarquía RFC→dirección es requisito explícito e inflexible del dueño |
+| D22 | Limitaciones estructurales del CFDI documentadas (§5.5): (1) detección de combustible = inferencia, casi determinista con catálogo oficial + captura por-concepto, pero nunca absoluta; (2) REP/Pagos ≠ confirmación bancaria — verificar que el dinero "cayó" requiere estados de cuenta (fuente ajena al CFDI), fuera del alcance de todas las fases; conciliación bancaria queda como dirección futura sin fase | 2026-07-04 | Distinguir "falta un campo" (arreglable en F2.6) de "el CFDI no contiene esa verdad" (no arreglable con columnas). Evita re-reportes como bugs y promesas comerciales imposibles |
+| D23 | Auditoría de complementos COMPLETA (§13.5) con los 5 archivos oficiales recibidos; F2.6 desbloqueada con alcance cerrado. El `catCFDI.xsd` (sin descripciones) es SUFICIENTE para F2.6 — el `catCFDI.xls` con descripciones queda como opcional futuro, no bloquea nada. Referencia programática generada en `docs/sat-esquemas-referencia.md` | 2026-07-04 | La auditoría encontró 2 bugs reales que ningún reporte de usuario había detectado (typo de atributo que deja una columna siempre en 0.00; clave de combustible inexistente en el catálogo oficial) — evidencia de que auditar contra fuente autoritativa, y no de memoria, era el método correcto |
+| D24 | **Bóveda F4 = SQLite híbrido relacional+JSON con política de elasticidad (§14). MongoDB DESCARTADO definitivamente** (local o Atlas). El esquema evoluciona con: campo nuevo→JSON `extras` sin migración; campo caliente→promoción aditiva (ADD COLUMN + backfill); migraciones numeradas SOLO aditivas (`user_version`); respaldo automático del .db antes de migrar | 2026-07-04 | El dueño preguntó explícitamente por evolución tipo MongoDB ("agregar sin que se rompa nada"). Mongo falla por privacidad (datos fiscales en nube de terceros — misma lógica de D9), empaque (servidor aparte imposible para contadores no técnicos) y capacidad (free tier 512MB vs 200k+ XMLs). El híbrido SQLite da esa elasticidad CON poder SQL. Capacidades verificadas EN VIVO en la máquina del dueño (SQLite 3.50.4): JSON, ADD COLUMN no destructivo, índices de expresión, user_version |
+| D25 | Contrato de captura por-concepto para F2.6 (§14.5): listas de **dicts Python nativos** (no JSON pre-serializado) con **claves = nombres oficiales del XSD tal cual** — `ConceptosDetalle` en facturas; `PercepcionesDetalle`/`DeduccionesDetalle`/`OtrosPagosDetalle`/`IncapacidadesDetalle` en Nómina. Internos: NO van al Excel ni al visor en F2.6; la columna plana "Conceptos" se conserva | 2026-07-04 | Era EL bloqueo que detuvo F2.6: capturar en una forma que F4 no obligue a rehacer. Con nombres oficiales, el mapeo dict→columnas/extras de F4 es mecánico y sin re-parseo de XMLs; el fix multi-alumno IEDU cae solo (findall por concepto). Dueño ya había confirmado capturar en memoria ahora, no posponer |
+| D26 | "Total Sueldos" de Nómina: **AMBAS** — se agrega el campo oficial `Percepciones@TotalSueldos` como columna nueva Y la columna actual se renombra a "Total Percepciones" (su contenido real) | 2026-07-04 | La etiqueta actual miente a un contador (incluye indemnizaciones/jubilaciones). Capturar ambos evita perder el dato existente y agrega el preciso. Decisión del dueño |
+| D27 | Bug estructural de Pagos corregido en el mismo paso que el typo (no se pausó para volver a Fable): cada bucle de `PAGO_FIELDS_TO_EXTRACT` ahora filtra por el `xpath` declarado en su tupla, en vez de procesar la lista completa contra cualquier nodo | 2026-07-04 | Hallado al escribir la prueba del typo: `MontoTotalPagos` y 10 columnas de Totales SIEMPRE salían `None`, y "Version Pago" nunca se leía. Es un bug inequívoco (sin ambigüedad de diseño) descubierto en el mismo archivo que ya se estaba tocando — el dueño autorizó corregirlo de inmediato dado que el proyecto está en etapa temprana, en vez de regresar a auditoría |
 
 ## 8. Instrucciones para modelos constructores (de cualquier fase)
 
@@ -432,6 +468,15 @@ el botón "Guardar Excel…" lo use después; poner refs a None en el slot de
    aunque este documento la marque como decidida o "reversible". Diseñar una
    eliminación no es lo mismo que ejecutarla: la ejecución siempre se
    confirma primero con el dueño.
+7. **REGLA DE RESPALDO (D20):** antes de cualquier ola de cambios a los
+   parsers (`xml_parser_*.py`, `pagos_parser_*.py`), verifica que el árbol
+   git esté limpio, la suite verde, y que exista un tag de respaldo del
+   estado funcional (patrón `vX.Y.Z-estable`). Si no existe, créalo antes de
+   tocar el primer archivo.
+8. **REGLA ANTI-ALUCINACIÓN DE ESQUEMAS (§13.1):** los campos del SAT se
+   auditan/agregan SOLO contra XSD o catálogos oficiales presentes en
+   `docs/`. Si el documento no está, se le pide al dueño — NUNCA se inventa
+   un campo de memoria de entrenamiento.
 
 ## 9. Resultado de F2 (construida 2026-07-03)
 
@@ -667,16 +712,17 @@ automáticos.
 ventana visible de Windows. El criterio de aceptación #6 (confirmación del
 dueño en máquina real) sigue abierto.
 
-### Pendiente para cerrar F2.5 al 100%
-- [ ] Dueño confirma en Windows real: el visor aparece tras procesar (antes de
-  guardar cualquier Excel), el filtro por concepto/monto funciona y los
-  totales se ven correctos, "Abrir carpeta" abre el Explorador en el lugar
-  correcto, y guardar dos veces en carpetas distintas hace que la segunda vez
-  proponga la última usada (no siempre Reports).
-- [ ] Dueño confirma visualmente la paleta "Office/Excel Dark" (D16) en la
-  tabla del visor y que el número de fila queda 1..N tras ordenar (ver abajo).
-- [ ] Decidir con el dueño la siguiente fase: F3 (directorio de trabajo +
-  auto-organización) o F4 (bóveda SQLite).
+### Cierre de F2.5 — CONFIRMADO por el dueño (2026-07-04, 3 rondas de prueba real)
+- [x] Visor aparece tras procesar (antes de cualquier Excel); filtro por
+  concepto ("energía"→CFE, "Cemento", "Mortero") y por monto funcionando;
+  totales correctos. Palabras del dueño: "mind-blowing".
+- [x] Paleta "Office/Excel Dark" (D16) confirmada visualmente ("it is looking
+  good, very good"); numeración de filas 1..N tras ordenar corregida y
+  confirmada.
+- [x] Ventana vuelve a encogerse (fix del `totals_label` sin word wrap) —
+  confirmado: "Perfecto, ya funciona".
+- [x] Siguiente fase decidida: **F2.6** (captura de campos faltantes),
+  bloqueada hasta recibir los XSD del SAT (ver §13). F3/F4 siguen después.
 - [x] Enfoque de columnas visibles decidido (D18): default ampliado YA
   (Facturas 12→23, Nómina 11→19, Pagos 9→17) + selector configurable por el
   usuario en F3. Ver detalle de qué se incluyó/excluyó y por qué en los
@@ -715,10 +761,338 @@ inmediato (bugs/decisiones sin ambigüedad) y 1 quedó como decisión abierta:
    encogerse libremente y el texto se acomoda en varias líneas cuando hace
    falta en vez de bloquear el resize.
 
-**Pregunta abierta que quedó pendiente de la respuesta del dueño:** para las
-columnas VISIBLES en la tabla (no el filtro, que se queda igual por D15/D16),
-¿F2.5 amplía el default curado ahora (más allá de los ~11 actuales, sin
-llegar a las 62 del Excel), y/o se construye en F3 un selector de columnas
-configurable por el usuario (checkboxes, persistido en `settings.json`)? Este
-selector es una función real de UI (comparable en tamaño a lo ya construido
-en F2.5), no un ajuste barato como ampliar `text_fields`.
+**Pregunta abierta — RESUELTA el mismo día (ver D18):** columnas visibles →
+default curado ampliado YA + selector configurable en F3.
+
+## 13. Auditoría de completitud de campos (2026-07-04) — F2.6
+
+Auditoría solicitada por el dueño: verificar si los parsers extraen TODO lo
+que el esquema oficial del SAT define, no solo lo que el visor muestra (eso ya
+se curó en D18).
+
+### 13.1 Método (regla anti-alucinación)
+
+- **Núcleo CFDI 4.0: AUDITADO** contra `docs/cfdv40.xsd` — el XSD **oficial**
+  del SAT que ya vivía en el repo. Se extrajo programáticamente cada
+  elemento/atributo declarado y se comparó contra los 98 campos que un
+  registro real captura hoy. Cero campos inventados de memoria.
+- **Complementos (Nómina 1.2, Pagos 2.0, IEDU, ImpLocal): EN ESPERA.** Sus
+  XSD NO están en el repo y NO se auditaron de memoria a propósito — el
+  conocimiento de entrenamiento de un modelo no es fuente autoritativa para
+  esquemas fiscales. El dueño subirá los archivos (ver 13.4).
+
+### 13.2 Hallazgos del núcleo CFDI 4.0
+
+**Bien cubierto:** `Comprobante` 18/19 atributos, `Receptor` 7/7,
+TimbreFiscalDigital completo, totales de impuestos con desglose por tasa.
+
+**Faltantes confirmados (contra XSD oficial):**
+
+| Campo | ¿Importa? | Nota |
+|---|---|---|
+| `InformacionGlobal` (Periodicidad/Meses/Año) | **ALTA** | Factura global de público en general (RFC XAXX010101000) — sin esto no se distingue de una factura normal. Gasolineras/tiendas la usan a diario |
+| `CfdiRelacionados@TipoRelacion` | **ALTA** | Se captura el UUID relacionado pero NO el tipo (01 nota de crédito, 04 sustitución…). `constants.py:316` dice que se excluyó a propósito — motivo original desconocido; recuperar en F2.6 |
+| `Concepto@CuentaPredial` | **MEDIA-ALTA** | Obligatoria para arrendamiento — relevante para deducción de rentas |
+| `Concepto/InformacionAduanera@NumeroPedimento` | MEDIA | Importaciones |
+| `Comprobante@Confirmacion` | BAJA | Confirmación de PAC para montos atípicos — raro |
+| `Emisor@FacAtrAdquirente` | BAJA | Facturación por adquirente — raro |
+| `ACuentaTerceros`, `Concepto/Parte` | BAJA | Casos raros |
+| `RegimenFiscal Emisor` | (inconsistencia) | **SÍ se captura** pero NO está en las 62 columnas del Excel — arreglo barato en F2.6 |
+
+**Hallazgo ESTRUCTURAL (el más importante):** el modelo actual es 1 fila =
+1 CFDI y los conceptos se aplanan a un string (`Conceptos`). Por eso no existe
+"Monto Colegiatura": no hay captura POR-CONCEPTO de nada — `ClaveProdServ`,
+`Cantidad`, `ClaveUnidad`, `ValorUnitario`, `Importe`, `Descuento` y
+`ObjetoImp` por línea se leen (algunos) y se descartan. El caso IEDU del dueño
+es un síntoma de esta limitación general. La casa natural de la solución ya
+estaba decidida sin saberlo: la **tabla normalizada de conceptos de F4** (D9).
+F2.6 DISEÑA esa captura; F4 la almacena plenamente. Bonus: guardar
+`ClaveProdServ` por concepto convierte la detección de combustible de
+heurística débil a casi determinista (ver §5.5.1).
+
+### 13.3 Alcance decidido (D19)
+
+- **SE AUDITA:** los 4 complementos que la app ya usa — Nómina 1.2,
+  Pagos 2.0, IEDU, Impuestos Locales.
+- **FUERA deliberadamente** (análisis costo/beneficio del dueño, compartido
+  por el auditor): **Carta Porte** (nicho de transportistas con ERP propio),
+  **Comercio Exterior cce20** (sin clientes importadores/exportadores hoy) y
+  **auditoría del parser 3.3** (solo archivos históricos pre-2022; si llega
+  una auditoría fiscal de 5/10 años, se decide entonces). NO se prepara nada
+  anticipadamente: la arquitectura de aislamiento por versión garantiza que
+  agregar un complemento después es costo acotado (un módulo nuevo + una rama
+  de despacho), y los modelos futuros lo harán más barato. **Disparador
+  documentado:** primer cliente real que lo necesite.
+
+### 13.4 Archivos que el dueño subirá a `docs/sat/` (BLOQUEAN F2.6)
+
+| # | Archivo | Para qué |
+|---|---|---|
+| 1 | `nomina12.xsd` | Auditar los ~40 campos de Nómina 1.2 (rev. C) |
+| 2 | `pagos20.xsd` | Auditar las 115 columnas de Pagos 2.0 |
+| 3 | `iedu.xsd` | Cerrar formalmente el caso colegiaturas |
+| 4 | `implocal.xsd` | Impuestos Locales (ISH etc.) |
+| 5 | `catCFDI.xls`/`.xlsx` | Catálogos CFDI 4.0 — en especial `c_ClaveProdServ` (lista oficial completa de claves de combustible y de servicios educativos) |
+| opc. | Guía de llenado Anexo 20 (PDF) | Contexto útil, no indispensable |
+
+Fuente: portal del SAT, sección Anexo 20 (esquemas y catálogos). Al recibirse,
+se convertirán a Markdown de referencia y se ejecutará la auditoría de
+complementos con el mismo método de 13.1. **F2.6 no arranca sin esto.**
+
+> **✅ RECIBIDOS los 5 archivos (2026-07-04, mismo día).** El dueño los subió a
+> `docs/` (junto al cfdv40.xsd existente, no en subcarpeta — aceptado así).
+> Notas de los archivos: `iedu.xsd` venía con el esquema DUPLICADO (artefacto
+> de copy-paste del navegador) y un `&` sin escapar en el patrón del RFC (así
+> lo distribuye el SAT) — ambos se manejaron en memoria al parsear, el archivo
+> NO se modificó. `catCFDI.xsd` (5.5 MB): trae 21 catálogos incluido
+> `c_ClaveProdServ` completo (52,747 claves) pero SIN descripciones — sirve
+> para validar existencia y extraer familias completas; si algún día se
+> necesitan las descripciones individuales, se pediría el `catCFDI.xls`
+> (opcional, hoy no bloquea nada).
+> **Referencia generada:** `docs/sat-esquemas-referencia.md` — estructura
+> completa de los 5 esquemas extraída PROGRAMÁTICAMENTE (no a mano), lista
+> para que el constructor de F2.6 trabaje sin re-parsear XSDs.
+
+### 13.5 Resultados de la auditoría de complementos (2026-07-04) — F2.6 DESBLOQUEADA
+
+Auditados los 4 complementos contra sus XSD oficiales con el método 13.1:
+
+**🐛 BUG REAL DE PRODUCCIÓN (Pagos 2.0):** `constants.py` extrae el atributo
+`TotalTrasladadoBaseIVAExento`, pero el nombre oficial en `pagos20.xsd` es
+`TotalTrasladosBaseIVAExento` ("Traslados", no "Trasladado"). El atributo mal
+escrito JAMÁS coincide en un XML real → esa columna siempre sale 0.00 aunque
+el comprobante traiga el dato. Corregir en F2.6 (una línea + prueba).
+
+**🐛 CLAVE MUERTA (combustible):** de las 4 claves hardcodeadas en
+`FUEL_PROD_SERV_CODES`, la `15101501` NO existe en el catálogo oficial. La
+familia oficial 1510 (combustibles) tiene **35 claves** — el diesel
+(`15101505`) y 30 más no están en la lista actual y hoy solo se detectan por
+palabra clave. F2.6: reemplazar por las 35 oficiales (constante generada desde
+el catálogo, ver referencia MD), manteniendo keywords como respaldo.
+
+**⚠️ ETIQUETA ENGAÑOSA (Nómina):** la columna Excel "Total Sueldos" en
+realidad contiene `Nomina@TotalPercepciones`. El atributo oficial
+`Percepciones@TotalSueldos` es OTRA cosa (solo sueldos, sin indemnización ni
+jubilación) y NO se captura. Para un contador esa etiqueta miente.
+**RESUELTO (D26, 2026-07-04): AMBAS cosas** — se agrega el campo oficial
+`Percepciones@TotalSueldos` como columna NUEVA, y la columna actual se
+renombra a "Total Percepciones" para que diga la verdad. Nadie pierde el dato
+que ya tenía.
+
+**Faltantes por complemento:**
+
+| Complemento | Estado | Faltantes |
+|---|---|---|
+| **Pagos 2.0** | ✅ Prácticamente completo | Solo el bug del typo (arriba). Columnas legacy de Pagos 1.0 (`TipoCambioDR`, `MetodoDePagoDR`) se conservan inofensivas |
+| **IEDU** | ⚠️ Incompleto | Falta `autRVOE` [REQ] (autorización RVOE — parte del requisito de deducibilidad de colegiaturas) y `rfcPago` [opt] (RFC de quien paga — clave cuando paga un tercero). Además solo se captura el PRIMER `instEducativas` (`find`, no `findall`): factura con varios alumnos pierde a los demás |
+| **ImpLocal** | ✅ Aceptable | Totales + ISH capturados. Se pierde el detalle por impuesto local individual distinto de ISH (nombre/tasa de cada uno se suma sin identificar) — MEDIA, mejora natural con la captura por-línea de F4 |
+| **Nómina 1.2** | ⚠️ Varios huecos | Comentados a propósito en `constants.py` ("Not in Excel list"): `NumDiasPagados` [REQ], `TipoContrato` [REQ], `Banco`, `CuentaBancaria`. Nunca extraídos: `TipoRegimen` [REQ], `NumEmpleado` [REQ], `Departamento`, `Puesto`, `RiesgoPuesto`, `Sindicalizado`, `TipoJornada`, `SubContratacion`, `EntidadSNCF`, `Percepciones@TotalSueldos`/`TotalSeparacionIndemnizacion`/`TotalJubilacionPensionRetiro`, y TODO el detalle por línea (cada Percepción/Deducción/OtroPago con su Clave y Concepto, `HorasExtra`, `Incapacidades`, `SubsidioAlEmpleo@SubsidioCausado`, `JubilacionPensionRetiro`, `SeparacionIndemnizacion`) — el mismo patrón estructural del §13.2: los renglones se aplanan |
+
+**Bonus para el futuro filtro de colegiaturas del dueño:** familia oficial
+8612 (servicios educativos) = 15 claves, ya extraídas en la referencia MD —
+detectar colegiaturas por `ClaveProdServ` será exacto cuando exista la
+captura por-concepto.
+
+## 14. Diseño técnico de F4 — Bóveda SQLite ELÁSTICA (2026-07-04)
+
+Diseñado ANTES de construir F2.6 a petición del dueño: la forma en que F2.6
+captura el detalle por-concepto depende de cómo F4 guardará y evolucionará el
+esquema. Este diseño responde su pregunta explícita: *"¿el día que salga una
+nueva versión de CFDI o un complemento nuevo, se puede agregar sin romper
+nada?"* — **Sí, con el diseño de abajo.**
+
+### 14.1 SQLite híbrido, NO MongoDB (D24)
+
+El dueño (con experiencia previa en MongoDB) preguntó si convenía un almacén
+tipo documento. **Veredicto: NO**, por razones de fondo, no de gusto:
+
+1. **Privacidad:** Mongo práctico = Atlas (nube) → datos fiscales de clientes
+   en un tercero. Contradice la propuesta de confianza de la app y la misma
+   lógica de D9 (embeddings) y la regla e.firma. Mongo local = un SERVIDOR
+   aparte imposible de empaquetar razonablemente con PyInstaller para
+   contadores no técnicos.
+2. **Capacidad:** free tier de Atlas (512 MB) vs. objetivo de 200,000+ XMLs —
+   "se come el proyecto" (palabras del dueño).
+3. **Cero dependencias:** SQLite viene en la stdlib de Python, es UN archivo
+   en `Documents\CFDI-Processor\` (respaldable copiándolo), y su modo híbrido
+   relacional+JSON da la elasticidad tipo-Mongo que se busca CON poder SQL
+   donde importa (filtros/sumas/joins de F5).
+
+**Entorno verificado en la máquina del dueño (no asumido):** SQLite 3.50.4
+vía `sqlite3` de Python 3.14. Probado en vivo: funciones JSON
+(`json_extract`), `ALTER TABLE ADD COLUMN` no destructivo (filas viejas
+intactas), índices sobre expresiones JSON, `PRAGMA user_version`. Mínimos
+requeridos por este diseño: funciones JSON integradas (estándar desde SQLite
+3.38, 2022) e índices de expresión (desde 3.9, 2015) — cualquier Python
+3.10+ moderno los cumple; aún así, la bóveda hará un **check de versión al
+inicializar** y se negará con mensaje claro si el runtime fuera anciano.
+
+### 14.2 Esquema conceptual (DDL final se escribe en F4)
+
+Regla de reparto: va a **columna relacional** lo que (a) es común a todas las
+versiones CFDI conocidas Y (b) se filtra/agrupa/suma en F5 (RFC, dirección,
+fechas, montos, claves). TODO lo demás nace en `extras` (JSON).
+
+```
+cfdi          1 fila por comprobante. PK: uuid (dedup natural).
+              Relacional: version_cfdi, tipo, serie, folio, fecha_emision,
+              fecha_timbrado, rfc_emisor, nombre_emisor, regimen_emisor,
+              rfc_receptor, nombre_receptor, uso_cfdi, subtotal, descuento,
+              total, moneda, tipo_cambio, forma_pago, metodo_pago,
+              lugar_expedicion, direccion_doc ('EMITIDA'/'RECIBIDA' respecto
+              al RFC dueño — jerarquía dura de D21), estado_sat (se llena en
+              F7), archivo_xml, fecha_importacion,
+              complementos (JSON: lista de nombres detectados),
+              extras (JSON) ← todo lo no mapeado
+conceptos     1 fila por línea de concepto. FK cfdi_uuid + num_linea.
+              Relacional: clave_prod_serv, no_identificacion, cantidad,
+              clave_unidad, unidad, descripcion, valor_unitario, importe,
+              descuento, objeto_imp, complemento_tipo (p.ej. 'iedu').
+              JSON: complemento (autRVOE/CURP/nivel/rfcPago…), impuestos
+              (traslados/retenciones de la línea), extras.
+              → Aquí viven: colegiatura por monto, combustible por clave
+                oficial, FTS5 de F5 sobre descripcion (D9).
+nomina        1 fila por CFDI tipo N. Relacional: fechas de pago, num_dias,
+              curp, nss, num_empleado, tipo_contrato, tipo_regimen, registro
+              patronal, sbc, sdi, totales oficiales. JSON: percepciones,
+              deducciones, otros_pagos, incapacidades (arrays), extras.
+pagos         1 fila por nodo Pago (un CFDI-P puede traer varios). FK
+              cfdi_uuid. Relacional: fecha_pago, forma, moneda, tipo_cambio,
+              monto, num_operacion, cuentas bancarias. JSON: extras.
+pagos_doctos  1 fila por DoctoRelacionado. FK al pago. Relacional:
+              id_documento (=uuid de la factura pagada → habilita conciliar
+              REP↔factura con un join), serie, folio, moneda_dr,
+              equivalencia, num_parcialidad, imp_saldo_ant, imp_pagado,
+              imp_saldo_insoluto, objeto_imp_dr. JSON: impuestos_dr, extras.
+(versionado)  PRAGMA user_version = número de migración del esquema de la
+              app + tabla schema_meta con el log de migraciones aplicadas.
+```
+
+### 14.3 Política de elasticidad (las 4 reglas)
+
+1. **Campo nuevo nace en `extras` (JSON): cero migración.** El contrato del
+   INSERT de la bóveda es: claves conocidas del dict del parser → columnas;
+   TODO lo no mapeado → `extras` automáticamente. Un parser nuevo puede
+   producir campos que la DB nunca ha visto y se guardan igual, día uno.
+2. **Promoción de campos calientes:** si un campo de `extras` se vuelve
+   consultable (filtros/reportes), se promueve: `ALTER TABLE ADD COLUMN` +
+   backfill `UPDATE … SET col = json_extract(extras,'$.Campo')` + índice.
+   Aditivo, no destructivo, filas viejas intactas (verificado en vivo).
+3. **Migraciones numeradas y SOLO aditivas** (`user_version` N→N+1 al
+   arrancar la app). Jamás DROP/renombrado en caliente: renombrar = columna
+   nueva + backfill, la vieja se queda hasta una limpieza mayor programada.
+4. **Respaldo automático del archivo .db ANTES de aplicar cualquier
+   migración** (copia con sufijo de fecha — es un solo archivo, costo
+   trivial). Consistente con la filosofía de respaldo del dueño (D20).
+
+### 14.4 Flujo "SAT libera CFDI 4.1 / complemento nuevo" (paso a paso)
+
+1. Tag git de respaldo (regla §8.7).
+2. Nuevo `parsers/xml_parser_41.py` + UNA rama de despacho (regla intocable
+   §2.1). Los parsers existentes NO se tocan.
+3. El parser nuevo produce su dict con nombres oficiales del XSD. Al
+   importar: campos que ya existen como columna → columna; campos nuevos →
+   `extras`. **Cero ALTER TABLE, cero migración, cero riesgo el día uno.**
+   Las filas viejas (4.0) conviven con las nuevas (4.1) — `version_cfdi`
+   dice de cuál versión viene cada una.
+4. Si un campo nuevo se vuelve importante para filtrar → promoción (regla
+   14.3.2) cuando se necesite, no antes.
+5. Complemento nuevo → su detalle entra a `conceptos.complemento`/`extras`;
+   solo amerita tabla propia si su cardinalidad lo exige (como pagos_doctos).
+
+**Respuesta directa a la pregunta del dueño: sí — versión o complemento nuevo
+se agrega sin romper nada, sin migración destructiva, y sin tocar lo viejo.**
+
+### 14.5 Contrato de captura para F2.6 (desbloquea la construcción)
+
+Lo que el parser debe producir HOY para que F4 lo guarde mañana sin fricción
+y sin re-abrir ningún XML:
+
+- `data["ConceptosDetalle"]` = **lista de dicts Python nativos** — NO un
+  string JSON pre-serializado (serializar es asunto del almacenamiento en F4;
+  en memoria, visor y filtros futuros la consumen directa). Un dict por línea
+  de concepto, **claves = nombres oficiales del XSD tal cual**:
+  `ClaveProdServ, NoIdentificacion, Cantidad, ClaveUnidad, Unidad,
+  Descripcion, ValorUnitario, Importe, Descuento, ObjetoImp`, más subdicts
+  opcionales `Complemento` (p.ej. `{"tipo": "iedu", "autRVOE": …, "CURP": …,
+  "nivelEducativo": …, "nombreAlumno": …, "rfcPago": …}`) e `Impuestos`
+  (traslados/retenciones de esa línea). El fix multi-alumno IEDU (§13.5) cae
+  solo con esto: `findall` por concepto, cada alumno en su línea.
+- Mismo patrón en Nómina: `PercepcionesDetalle`, `DeduccionesDetalle`,
+  `OtrosPagosDetalle`, `IncapacidadesDetalle` (listas de dicts, nombres
+  oficiales del XSD de nomina12).
+- Estos campos internos **NO van al Excel** (se excluyen como ya se excluye
+  `CFDI_Type`) y **NO son columna del visor en F2.6**. La columna plana
+  `Conceptos` (string concatenado) se CONSERVA tal cual para visor/filtro.
+- Por qué nombres oficiales: el mapeo dict→columnas de F4 se vuelve mecánico
+  y cualquier auditoría futura contra XSD sigue siendo trivialmente
+  verificable (§8.8).
+
+## 15. Resultado de F2.6 (construida 2026-07-04)
+
+F2.6 se construyó completa siguiendo §13 (auditoría) y §14.5 (contrato de
+captura), en pasos chicos con pruebas después de cada uno.
+
+### 15.1 Bug estructural adicional encontrado (no estaba en la auditoría original)
+
+Al escribir la prueba del typo de Pagos (una sola columna), se descubrió un
+bug **más grande**: `PAGO_FIELDS_TO_EXTRACT` mezcla atributos de 3 niveles
+distintos del XML (`pago20:Pagos`, `pago20:Totales`, `pago20:Pago`) en una
+sola lista, pero cada bucle de extracción recorría la lista COMPLETA sin
+filtrar por el `xpath` que cada tupla ya traía declarado. Consecuencia real:
+**`MontoTotalPagos` y las 10 columnas de Totales SIEMPRE salían `None`**
+(no solo la del typo), y `"Version Pago"` nunca se leía de ningún lado. La
+auditoría de nombres contra XSD (§13.1) no lo detectó porque es un tipo de
+revisión distinto — comparar nombres de atributos no es lo mismo que rastrear
+si el valor sobrevive hasta el diccionario final. **Corregido** haciendo que
+cada bucle (`pagos_complement`, `Totales`, `Pago`) filtre por su propio
+`xpath` en vez de procesar la lista entera a ciegas — 4 pruebas nuevas en
+`tests/test_pagos_parser.py` cubren el caso.
+
+### 15.2 Cambios por complemento
+
+- **Combustible:** `FUEL_PROD_SERV_CODES` reemplazado por las 35 claves
+  oficiales de la familia 1510 (antes 4, una de ellas muerta). Se agregó
+  `EDU_PROD_SERV_CODES` (15 claves, familia 8612) como bonus para detectar
+  colegiaturas por clave — verificado con el fixture real de IEDU.
+- **Núcleo CFDI 4.0:** `InformacionGlobal` (`Comprobante Global`,
+  `Periodicidad Global`, `Meses Global`, `Año Global`), `CfdiRelacionados@TipoRelacion`
+  (código crudo — sin descripción inventada, el XSD no la trae y el catálogo
+  oficial resultó tener 9 códigos, no los 7 "recordados" de entrenamiento;
+  confirma por qué la regla anti-alucinación importa), `RegimenFiscal Emisor`
+  agregado a `INVOICE_COLUMN_ORDER` (ya se capturaba, nunca llegaba al Excel).
+- **IEDU:** `autRVOE` y `RFC Pago Colegiatura` (`rfcPago`) agregados a las
+  columnas planas de resumen (primer alumno, compatibilidad hacia atrás). El
+  caso multi-alumno se resuelve completo vía `ConceptosDetalle` (cada alumno
+  en su propio concepto, sin pérdida de datos).
+- **Nómina:** columna renombrada `"Total Sueldos"` → `"Total Percepciones"`
+  (contenido real sin cambios) + nueva `"Total Sueldos"` desde el campo
+  oficial `Percepciones@TotalSueldos` (D26 — ambas cosas, dato viejo
+  conservado). Agregados: `Num Dias Pagados`, `Tipo Contrato`, `Tipo Regimen`,
+  `Num Empleado`, `Departamento`, `Puesto`, `Riesgo Puesto`, `Sindicalizado`,
+  `Tipo Jornada`, `Total Separacion Indemnizacion`,
+  `Total Jubilacion Pension Retiro`, y (casos raros, primer/único nodo)
+  `EntidadSNCF`/`SubContratacion`.
+- **Captura por-concepto (D25):** `ConceptosDetalle` (Facturas/Nómina) y
+  `PercepcionesDetalle`/`DeduccionesDetalle`/`OtrosPagosDetalle`/
+  `IncapacidadesDetalle` (Nómina) — listas de dicts con nombres oficiales del
+  XSD, verificadas contra fixtures reales. Excluidas explícitamente del Excel
+  vía `constants.INTERNAL_ONLY_FIELDS` (Nómina no reindexa a una lista fija de
+  columnas — sin esta exclusión, habrían salido como texto de lista de Python
+  en una celda).
+
+### 15.3 Verificación
+
+- **81 pruebas verdes** (66 previas + 15 nuevas de F2.6, incluyendo las 4 del
+  bug estructural de Pagos).
+- Lote completo de `XML-Test/` reprocesado: 13 archivos, 0 errores, Excel de
+  70 columnas en Facturas (62+8) sin ninguna columna interna filtrada.
+- E2E headless de la GUI (hilo real) confirmó que el visor de F2.5 sigue
+  funcionando sin cambios tras estas modificaciones al parser.
+
+### Pendiente para cerrar F2.6 al 100%
+- [ ] Confirmación del dueño en máquina real (regla §8.4): reprocesar XMLs
+  reales y revisar que el Excel de Facturas/Nómina se vea correcto con las
+  columnas nuevas.
+- [ ] Decidir con el dueño la siguiente fase: F3 (directorio de trabajo +
+  auto-organización) o F4 (construir la bóveda SQLite, ya diseñada en §14).

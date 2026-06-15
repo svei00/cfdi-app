@@ -267,11 +267,30 @@ def parse_cfdi_pago_20(xml_file_path):
             except ValueError:
                 pass
 
+        # BUG CORREGIDO (ROADMAP.md Sec.13.5/D23, hallado al probar el fix del
+        # typo): PAGO_FIELDS_TO_EXTRACT mezcla en una sola lista atributos de
+        # 3 niveles distintos (pago20:Pagos, pago20:Totales, pago20:Pago),
+        # pero antes cada bucle recorria la lista COMPLETA sin filtrar por el
+        # xpath declarado en cada tupla. Eso hacia que los campos de Totales
+        # (MontoTotalPagos, TotalRetencionesIVA, etc.) se marcaran en None al
+        # no existir como atributo de pago20:Pago, y ese None SOBRESCRIBIA el
+        # valor correcto ya leido de Totales. Ahora cada bucle SOLO procesa
+        # las tuplas cuyo xpath coincide con el nodo que esta leyendo.
+        totales_fields = [t for t in PAGO_FIELDS_TO_EXTRACT if t[0] == ".//pago20:Totales"]
+        pagos_complement_fields = [t for t in PAGO_FIELDS_TO_EXTRACT if t[0] == ".//pago20:Pagos"]
+        pago_fields = [t for t in PAGO_FIELDS_TO_EXTRACT if t[0] == ".//pago20:Pago"]
+
+        # Atributos a nivel del complemento pago20:Pagos (p.ej. "Version Pago").
+        for _, attr_name, default_val, col_name in pagos_complement_fields:
+            if col_name in PAGOS_COLUMN_ORDER and attr_name in pagos_complement.attrib:
+                base_cfdi_data[col_name] = pagos_complement.get(
+                    attr_name, default_val).strip()
+
         # Extract Totales from pago20:Pagos
         totales_node = pagos_complement.find(
             "./pago20:Totales", NAMESPACES_CFDI_40)
         if totales_node is not None:
-            for _, attr_name, default_val, col_name in PAGO_FIELDS_TO_EXTRACT:
+            for _, attr_name, default_val, col_name in totales_fields:
                 if col_name in PAGOS_COLUMN_ORDER and attr_name in totales_node.attrib:
                     value_str = totales_node.get(
                         attr_name, default_val).strip()
@@ -285,7 +304,7 @@ def parse_cfdi_pago_20(xml_file_path):
         for pago_node in pagos_complement.findall("./pago20:Pago", NAMESPACES_CFDI_40):
             # Extract data from the current pago20:Pago element
             current_pago_data = {}
-            for _, attr_name, default_val, col_name in PAGO_FIELDS_TO_EXTRACT:
+            for _, attr_name, default_val, col_name in pago_fields:
                 if col_name in PAGOS_COLUMN_ORDER and attr_name in pago_node.attrib:
                     value_str = pago_node.get(attr_name, default_val).strip()
                     if col_name == "FormaDePagoP":
@@ -308,15 +327,17 @@ def parse_cfdi_pago_20(xml_file_path):
                             current_pago_data[col_name] = 0.0
                     else:
                         current_pago_data[col_name] = value_str
-                else:
-                    # Ensure all fields are initialized
-                    current_pago_data[col_name] = None
+                # NOTA: ya NO se inicializa a None aqui cuando el atributo no
+                # esta presente en este nodo especifico - eso es lo que
+                # causaba que un campo de OTRO nivel (Totales/Pagos) se
+                # borrara al fusionarse con row_data mas abajo.
 
             # Iterate through each pago20:DoctoRelacionado element within the current pago20:Pago
             for docto_relacionado_node in pago_node.findall("./pago20:DoctoRelacionado", NAMESPACES_CFDI_40):
                 row_data = base_cfdi_data.copy()  # Start with base CFDI data
 
-                # Add current pago20:Pago data
+                # Add current pago20:Pago data (solo las claves que SI se
+                # encontraron en este nodo - ver nota arriba).
                 for key, value in current_pago_data.items():
                     if key in PAGOS_COLUMN_ORDER:  # Only add if it's in the final column order
                         row_data[key] = value

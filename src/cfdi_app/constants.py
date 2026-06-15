@@ -132,8 +132,16 @@ INVOICE_COLUMN_ORDER = [
     "Factura",            # Merged field: Serie + Folio
     "UUID",
     "UUID Relacion",
+    # Agregado F2.6 (ROADMAP.md Sec.13.2): el codigo crudo del catalogo oficial
+    # c_TipoRelacion (01 nota de credito, 04 sustitucion, etc.). Sin
+    # descripcion traducida a proposito - el XSD no la trae y no se adivina de
+    # memoria (regla Sec.8.8); el catCFDI.xls (opcional) la agregaria despues.
+    "Tipo Relacion",
     "RFC Emisor",
     "Nombre Emisor",
+    # Agregado F2.6: ya se capturaba (CFDI_COMMON_CHILD_ELEMENTS_TO_EXTRACT)
+    # pero faltaba en el orden de columnas del Excel - nunca llegaba a salir.
+    "RegimenFiscal Emisor",
     "LugarDeExpedicion",
     "RFC Receptor",
     "Nombre Receptor",
@@ -180,9 +188,22 @@ INVOICE_COLUMN_ORDER = [
     "IVA Ret 6%",
     "RegimenFiscalReceptor",
     "DomicilioFiscalReceptor",
+    # Agregado F2.6 (ROADMAP.md Sec.13.2): InformacionGlobal distingue una
+    # factura global de publico en general (RFC XAXX010101000) de una factura
+    # normal - sin esto no se podian diferenciar (gasolineras/tiendas la usan
+    # a diario).
+    "Comprobante Global",
+    "Periodicidad Global",
+    "Meses Global",
+    "Año Global",
     "CURP Dependiente",
     "Nivel Educativo",
     "Nombre Dependiente",
+    # Agregados F2.6 (IEDU, ROADMAP.md Sec.13.5): autRVOE es [REQ] en el XSD -
+    # parte del requisito de deducibilidad de colegiaturas; rfcPago identifica
+    # a quien pago cuando no es el receptor de la factura.
+    "autRVOE",
+    "RFC Pago Colegiatura",
 ]
 
 # Define the precise order of columns for the Pagos sheet.
@@ -222,7 +243,7 @@ PAGOS_COLUMN_ORDER = [
     "TotalTrasladosImpuestoIVA8",  # From pago20:Totales
     "TotalTrasladosBaseIVA0",  # From pago20:Totales
     "TotalTrasladosImpuestoIVA0",  # From pago20:Totales
-    "TotalTrasladadoBaseIVAExento",  # From pago20:Totales
+    "TotalTrasladosBaseIVAExento",  # From pago20:Totales (nombre corregido, ver Sec.13.5)
     "MontoTotalPagos",  # From pago20:Totales
     "FechaPago",  # From pago20:Pago
     "FormaDePagoP",  # From pago20:Pago
@@ -305,6 +326,19 @@ PAGOS_COLUMN_ORDER = [
     "Ret IVA 16 Importe",  # From pago20:RetencionDR
 ]
 
+# Campos INTERNOS agregados en F2.6 (D25/Sec.14.5): captura por-concepto y
+# por-renglon de Nomina, en forma de listas de dicts con nombres oficiales
+# del XSD. Preparan la data para F4 (boveda SQLite) sin tener que re-parsear
+# el XML. NO van al Excel ni son columna del visor todavia - excel_exporter.py
+# los excluye explicitamente (igual que ya excluye "CFDI_Type").
+INTERNAL_ONLY_FIELDS = [
+    "ConceptosDetalle",
+    "PercepcionesDetalle",
+    "DeduccionesDetalle",
+    "OtrosPagosDetalle",
+    "IncapacidadesDetalle",
+]
+
 
 # --- XML FIELD EXTRACTION DEFINITIONS ---
 # List of XML tags/attributes to extract for CFDI elements not directly on the Comprobante root.
@@ -335,21 +369,47 @@ NOMINA_FIELDS_TO_EXTRACT = [
     (".//nomina12:Nomina", "FechaPago", "", "Fecha Pago"),
     (".//nomina12:Nomina", "FechaInicialPago", "", "Fecha Inicial Pago"),
     (".//nomina12:Nomina", "FechaFinalPago", "", "Fecha Final Pago"),
-    # (".//nomina12:Nomina", "NumDiasPagados", "", "Num Dias Pagados"), # Not in Excel list
-    (".//nomina12:Nomina", "TotalPercepciones", "0.00", "Total Sueldos"),
+    # Agregado F2.6 (ROADMAP.md Sec.13.5): NumDiasPagados es [REQ] en el XSD oficial.
+    (".//nomina12:Nomina", "NumDiasPagados", "", "Num Dias Pagados"),
+    # RENOMBRADO (D26): esta columna en realidad contiene TotalPercepciones
+    # (incluye indemnizaciones/jubilaciones), no solo sueldo. La etiqueta
+    # anterior ("Total Sueldos") era enganosa para un contador.
+    (".//nomina12:Nomina", "TotalPercepciones", "0.00", "Total Percepciones"),
     (".//nomina12:Nomina", "TotalDeducciones", "0.00", "Total Deducciones"),
     (".//nomina12:Nomina", "TotalOtrosPagos", "0.00", "Total Otros Pagos"),
+    # NUEVO (D26): el campo oficial Percepciones@TotalSueldos es "sueldo puro",
+    # distinto de TotalPercepciones de arriba. Vive en nomina12:Percepciones,
+    # no en nomina12:Nomina.
+    (".//nomina12:Percepciones", "TotalSueldos", "0.00", "Total Sueldos"),
+    (".//nomina12:Percepciones", "TotalSeparacionIndemnizacion", "0.00",
+     "Total Separacion Indemnizacion"),
+    (".//nomina12:Percepciones", "TotalJubilacionPensionRetiro", "0.00",
+     "Total Jubilacion Pension Retiro"),
     # Nomina 1.2 Emisor
     (".//nomina12:Emisor", "RegistroPatronal", "", "Registro Patronal"),
     (".//nomina12:Emisor", "Curp", "", "CURP Patron"),
     (".//nomina12:Emisor", "RfcPatronOrigen", "", "RFC Patron"),
+    # Agregado F2.6: EntidadSNCF (subcontratacion de personal, caso poco
+    # frecuente) - se captura el primer/unico nodo, ver ROADMAP Sec.13.5.
+    (".//nomina12:Emisor/nomina12:EntidadSNCF", "OrigenRecurso", "",
+     "Origen Recurso SNCF"),
+    (".//nomina12:Emisor/nomina12:EntidadSNCF", "MontoRecursoPropio", "0.00",
+     "Monto Recurso Propio SNCF"),
     # Nomina 1.2 Receptor
     # This is CURP del Empleado, not Patronal
     (".//nomina12:Receptor", "Curp", "", "CURP"),
     (".//nomina12:Receptor", "NumSeguridadSocial", "", "NSS"),
     (".//nomina12:Receptor", "FechaInicioRelLaboral", "", "Inicio Relacion Laboral"),
     # (".//nomina12:Receptor", "Rfc", "", "RFC"), # Already handled by main CFDI RFC Receptor
-    # (".//nomina12:Receptor", "TipoContrato", "", "Tipo Contrato"), # Not in Excel list
+    # Agregados F2.6 (todos [REQ] u opcionales del XSD oficial, antes fuera):
+    (".//nomina12:Receptor", "TipoContrato", "", "Tipo Contrato"),
+    (".//nomina12:Receptor", "TipoRegimen", "", "Tipo Regimen"),
+    (".//nomina12:Receptor", "NumEmpleado", "", "Num Empleado"),
+    (".//nomina12:Receptor", "Departamento", "", "Departamento"),
+    (".//nomina12:Receptor", "Puesto", "", "Puesto"),
+    (".//nomina12:Receptor", "RiesgoPuesto", "", "Riesgo Puesto"),
+    (".//nomina12:Receptor", "Sindicalizado", "", "Sindicalizado"),
+    (".//nomina12:Receptor", "TipoJornada", "", "Tipo Jornada"),
     (".//nomina12:Receptor", "Antigüedad", "", "Antiguedad"),
     (".//nomina12:Receptor", "PeriodicidadPago", "", "Periodicidad Pago"),
     # (".//nomina12:Receptor", "Banco", "", "Banco"), # Not in Excel list
@@ -357,6 +417,12 @@ NOMINA_FIELDS_TO_EXTRACT = [
     (".//nomina12:Receptor", "SalarioBaseCotApor", "0.00", "SBC"),
     (".//nomina12:Receptor", "SalarioDiarioIntegrado", "0.00", "SDI"),
     (".//nomina12:Receptor", "ClaveEntFed", "", "Entidad"),
+    # Agregado F2.6: SubContratacion (empleado que labora para otro RFC), caso
+    # poco frecuente - se captura el primer/unico nodo, ver ROADMAP Sec.13.5.
+    (".//nomina12:Receptor/nomina12:SubContratacion", "RfcLabora", "",
+     "RFC Labora SubContratacion"),
+    (".//nomina12:Receptor/nomina12:SubContratacion", "PorcentajeTiempo", "0.00",
+     "Porcentaje Tiempo SubContratacion"),
     # Nomina 1.2 Deducciones (TotalImpuestosRetenidos)
     (".//nomina12:Deducciones", "TotalImpuestosRetenidos", "0.00",
      "ImpuestosRetenidos"),  # Column name in Excel is "ImpuestosRetenidos"
@@ -389,8 +455,12 @@ PAGO_FIELDS_TO_EXTRACT = [
     (".//pago20:Totales", "TotalTrasladosBaseIVA0", "0.00", "TotalTrasladosBaseIVA0"),
     (".//pago20:Totales", "TotalTrasladosImpuestoIVA0",
      "0.00", "TotalTrasladosImpuestoIVA0"),
-    (".//pago20:Totales", "TotalTrasladadoBaseIVAExento",
-     "0.00", "TotalTrasladadoBaseIVAExento"),
+    # BUG CORREGIDO (ROADMAP.md Sec.13.5/D23): el atributo oficial es
+    # "TotalTrasladosBaseIVAExento" ("Traslados", no "Trasladado"). El nombre
+    # anterior nunca coincidia con un XML real -> esta columna salia siempre
+    # 0.00 aunque el comprobante trajera el dato.
+    (".//pago20:Totales", "TotalTrasladosBaseIVAExento",
+     "0.00", "TotalTrasladosBaseIVAExento"),
     (".//pago20:Totales", "MontoTotalPagos", "0.00", "MontoTotalPagos"),
     # Attributes from pago20:Pago (individual payment)
     (".//pago20:Pago", "FechaPago", "", "FechaPago"),
@@ -496,10 +566,30 @@ PAGO_DR_TAX_FIELDS = {
 }
 
 
-# Define common ClaveProdServ codes for fuel (from SAT's catalog)
-FUEL_PROD_SERV_CODES = ["15101514", "15101501", "15101502", "15101500"]
+# ClaveProdServ oficiales de combustible (familia 1510, catalogo c_ClaveProdServ
+# del SAT - docs/catCFDI.xsd). Extraidas programaticamente del XSD oficial
+# 2026-07-04 (ROADMAP.md Sec.13.5/D23): las 4 claves anteriores incluian una
+# clave MUERTA (15101501, no existe en el catalogo oficial) y le faltaban 31
+# claves reales, incluido el diesel (15101505).
+FUEL_PROD_SERV_CODES = [
+    "15101500", "15101502", "15101503", "15101504", "15101505", "15101506",
+    "15101507", "15101508", "15101509", "15101510", "15101511", "15101512",
+    "15101513", "15101514", "15101515", "15101600", "15101601", "15101602",
+    "15101603", "15101604", "15101605", "15101606", "15101607", "15101608",
+    "15101609", "15101610", "15101611", "15101612", "15101613", "15101614",
+    "15101700", "15101701", "15101702", "15101800", "15101801",
+]
 # Define common units for fuel
 FUEL_UNITS = ["LTR", "LITRO", "GAL", "GALON", "KL", "KILO", "KILOGALON", "E48"]
-# Define keywords to look for in Description (case-insensitive)
+# Define keywords to look for in Description (case-insensitive) - respaldo
+# cuando el emisor no usa una ClaveProdServ de la familia 1510.
 FUEL_KEYWORDS = ["MAGNA", "PREMIUM", "DIESEL",
                  "GASOLINA", "COMBUSTIBLE", "GAS"]
+
+# ClaveProdServ oficiales de servicios educativos (familia 8612) - permite
+# detectar colegiaturas (UsoCFDI D10) por clave en vez de solo por texto.
+EDU_PROD_SERV_CODES = [
+    "86121500", "86121501", "86121502", "86121503", "86121504", "86121600",
+    "86121601", "86121602", "86121700", "86121701", "86121702", "86121800",
+    "86121802", "86121803", "86121804",
+]

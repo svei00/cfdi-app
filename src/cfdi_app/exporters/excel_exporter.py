@@ -5,7 +5,9 @@ import os
 import pandas as pd
 from openpyxl.utils import get_column_letter
 
-from cfdi_app.constants import INVOICE_COLUMN_ORDER, PAGOS_COLUMN_ORDER
+from cfdi_app.constants import (
+    INVOICE_COLUMN_ORDER, PAGOS_COLUMN_ORDER, INTERNAL_ONLY_FIELDS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,12 @@ def export_to_excel(invoice_data_list, nomina_data_list, pagos_data_list, output
         # --- Hoja de Nomina ---
         if nomina_data_list:
             df_nominas = pd.DataFrame(nomina_data_list)
-            df_nominas = df_nominas.drop(columns=['CFDI_Type'], errors='ignore')
+            # Nomina no tiene una lista fija de columnas (deuda tecnica
+            # conocida) - a diferencia de Invoices/Pagos, aqui SI hay que
+            # excluir a mano los campos internos de F2.6 (D25), o saldrian
+            # como texto de lista de Python en una celda.
+            df_nominas = df_nominas.drop(
+                columns=['CFDI_Type'] + INTERNAL_ONLY_FIELDS, errors='ignore')
             df_nominas.to_excel(writer, sheet_name='Nomina', index=False)
             autosize_columns(writer.sheets['Nomina'], df_nominas)
             logger.info(

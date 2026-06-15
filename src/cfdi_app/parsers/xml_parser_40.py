@@ -181,6 +181,12 @@ def _extract_iedu_data(root, data, namespaces):
     """
     Extracts Specific Data from IEDU Complement.
     This function expects the root of the XML (cfdi:Comprobante) and navigates from there.
+
+    Extrae el PRIMER complemento IEDU encontrado a las columnas planas de
+    resumen (compatibilidad hacia atras, caso comun de un solo alumno). Si
+    hay VARIOS alumnos en la misma factura, el detalle completo de CADA uno
+    vive en data["ConceptosDetalle"][i]["Complemento"] (ver D25/Sec.14.5) -
+    ningun alumno se pierde, solo no se refleja en estas columnas de resumen.
     """
     # Corrected XPath to find iedu:instEducativas nested under cfdi:Concepto/cfdi:ComplementoConcepto
     iedu_complement = root.find(
@@ -191,6 +197,173 @@ def _extract_iedu_data(root, data, namespaces):
             "nivelEducativo", "").strip()
         data["Nombre Dependiente"] = iedu_complement.get(
             "nombreAlumno", "").strip()
+        # Agregados F2.6 (ROADMAP.md Sec.13.5): autRVOE es [REQ] en el XSD
+        # oficial - parte del requisito de deducibilidad de colegiaturas.
+        data["autRVOE"] = iedu_complement.get("autRVOE", "").strip()
+        data["RFC Pago Colegiatura"] = iedu_complement.get(
+            "rfcPago", "").strip()
+
+
+def _extract_informacion_global(root, data, namespaces):
+    """
+    Extrae InformacionGlobal (Periodicidad/Meses/Año) - ROADMAP.md Sec.13.2.
+    Distingue una factura global de publico en general (RFC XAXX010101000,
+    usada a diario por gasolineras/tiendas) de una factura normal.
+    """
+    info_global = root.find("cfdi:InformacionGlobal", namespaces)
+    if info_global is not None:
+        data["Comprobante Global"] = "Si"
+        data["Periodicidad Global"] = info_global.get(
+            "Periodicidad", "").strip()
+        data["Meses Global"] = info_global.get("Meses", "").strip()
+        data["Año Global"] = info_global.get("Año", "").strip()
+    else:
+        data["Comprobante Global"] = "No"
+        data["Periodicidad Global"] = None
+        data["Meses Global"] = None
+        data["Año Global"] = None
+
+
+def _extract_tipo_relacion(root, data, namespaces):
+    """
+    Extrae CfdiRelacionados@TipoRelacion (ROADMAP.md Sec.13.2). Antes solo se
+    capturaba el UUID relacionado, no el tipo de relacion (01 nota de
+    credito, 04 sustitucion, etc. - catalogo oficial c_TipoRelacion, 9
+    codigos). Se guarda el codigo crudo: el XSD no trae descripciones y no
+    se adivinan de memoria (regla Sec.8.8); el catCFDI.xls (opcional)
+    las agregaria si algun dia hicieran falta.
+    """
+    cfdi_relacionados = root.find("cfdi:CfdiRelacionados", namespaces)
+    data["Tipo Relacion"] = cfdi_relacionados.get(
+        "TipoRelacion", "").strip() if cfdi_relacionados is not None else None
+
+
+def _extract_conceptos_detalle(root, namespaces):
+    """
+    Captura el detalle POR-CONCEPTO completo (D25/Sec.14.5): una lista de
+    dicts, claves = nombres oficiales del XSD tal cual. Campo INTERNO - no va
+    al Excel ni es columna del visor en F2.6 (core.py/excel_exporter.py lo
+    excluyen como ya se excluye CFDI_Type). F4 lo persiste sin re-parsear
+    el XML. Aqui vive la solucion real del caso "Monto Colegiatura" y de la
+    deteccion exacta de combustible por ClaveProdServ.
+    """
+    detalle = []
+    for concepto in root.findall(".//cfdi:Concepto", namespaces):
+        item = {
+            "ClaveProdServ": concepto.get("ClaveProdServ", "").strip(),
+            "NoIdentificacion": concepto.get("NoIdentificacion", "").strip(),
+            "Cantidad": concepto.get("Cantidad", "").strip(),
+            "ClaveUnidad": concepto.get("ClaveUnidad", "").strip(),
+            "Unidad": concepto.get("Unidad", "").strip(),
+            "Descripcion": concepto.get("Descripcion", "").strip(),
+            "ValorUnitario": concepto.get("ValorUnitario", "").strip(),
+            "Importe": concepto.get("Importe", "").strip(),
+            "Descuento": concepto.get("Descuento", "").strip(),
+            "ObjetoImp": concepto.get("ObjetoImp", "").strip(),
+        }
+
+        cuenta_predial = concepto.find("cfdi:CuentaPredial", namespaces)
+        if cuenta_predial is not None:
+            item["CuentaPredial"] = cuenta_predial.get("Numero", "").strip()
+
+        iedu = concepto.find(
+            "cfdi:ComplementoConcepto/iedu:instEducativas", namespaces)
+        if iedu is not None:
+            item["Complemento"] = {
+                "tipo": "iedu",
+                "version": iedu.get("version", "").strip(),
+                "nombreAlumno": iedu.get("nombreAlumno", "").strip(),
+                "CURP": iedu.get("CURP", "").strip(),
+                "nivelEducativo": iedu.get("nivelEducativo", "").strip(),
+                "autRVOE": iedu.get("autRVOE", "").strip(),
+                "rfcPago": iedu.get("rfcPago", "").strip(),
+            }
+
+        traslados = [
+            {
+                "Base": t.get("Base", "").strip(),
+                "Impuesto": t.get("Impuesto", "").strip(),
+                "TipoFactor": t.get("TipoFactor", "").strip(),
+                "TasaOCuota": t.get("TasaOCuota", "").strip(),
+                "Importe": t.get("Importe", "").strip(),
+            }
+            for t in concepto.findall(
+                "cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", namespaces)
+        ]
+        retenciones = [
+            {
+                "Base": r.get("Base", "").strip(),
+                "Impuesto": r.get("Impuesto", "").strip(),
+                "TipoFactor": r.get("TipoFactor", "").strip(),
+                "TasaOCuota": r.get("TasaOCuota", "").strip(),
+                "Importe": r.get("Importe", "").strip(),
+            }
+            for r in concepto.findall(
+                "cfdi:Impuestos/cfdi:Retenciones/cfdi:Retencion", namespaces)
+        ]
+        if traslados or retenciones:
+            item["Impuestos"] = {
+                "Traslados": traslados, "Retenciones": retenciones}
+
+        detalle.append(item)
+    return detalle
+
+
+def _extract_nomina_detalle(root, namespaces):
+    """
+    Detalle por-renglon de Nomina (D25/Sec.14.5): listas de dicts con claves
+    = nombres oficiales del XSD de nomina12. Campos INTERNOS, mismo criterio
+    que _extract_conceptos_detalle - no van al Excel/visor en F2.6.
+    """
+    percepciones = []
+    for p in root.findall(".//nomina12:Percepcion", namespaces):
+        item = {
+            "TipoPercepcion": p.get("TipoPercepcion", "").strip(),
+            "Clave": p.get("Clave", "").strip(),
+            "Concepto": p.get("Concepto", "").strip(),
+            "ImporteGravado": p.get("ImporteGravado", "").strip(),
+            "ImporteExento": p.get("ImporteExento", "").strip(),
+        }
+        horas_extra = p.find("nomina12:HorasExtra", namespaces)
+        if horas_extra is not None:
+            item["HorasExtra"] = {
+                "Dias": horas_extra.get("Dias", "").strip(),
+                "TipoHoras": horas_extra.get("TipoHoras", "").strip(),
+                "HorasExtra": horas_extra.get("HorasExtra", "").strip(),
+                "ImportePagado": horas_extra.get("ImportePagado", "").strip(),
+            }
+        percepciones.append(item)
+
+    deducciones = [
+        {
+            "TipoDeduccion": d.get("TipoDeduccion", "").strip(),
+            "Clave": d.get("Clave", "").strip(),
+            "Concepto": d.get("Concepto", "").strip(),
+            "Importe": d.get("Importe", "").strip(),
+        }
+        for d in root.findall(".//nomina12:Deduccion", namespaces)
+    ]
+
+    otros_pagos = [
+        {
+            "TipoOtroPago": o.get("TipoOtroPago", "").strip(),
+            "Clave": o.get("Clave", "").strip(),
+            "Concepto": o.get("Concepto", "").strip(),
+            "Importe": o.get("Importe", "").strip(),
+        }
+        for o in root.findall(".//nomina12:OtroPago", namespaces)
+    ]
+
+    incapacidades = [
+        {
+            "DiasIncapacidad": i.get("DiasIncapacidad", "").strip(),
+            "TipoIncapacidad": i.get("TipoIncapacidad", "").strip(),
+            "ImporteMonetario": i.get("ImporteMonetario", "").strip(),
+        }
+        for i in root.findall(".//nomina12:Incapacidad", namespaces)
+    ]
+
+    return percepciones, deducciones, otros_pagos, incapacidades
 
 
 def parse_cfdi_40_invoice(xml_file_path):
@@ -310,6 +483,10 @@ def parse_cfdi_40_invoice(xml_file_path):
             data["NoCertificadoSAT"] = timbre_fiscal_digital.get(
                 "NoCertificadoSAT", "").strip()
 
+        # --- InformacionGlobal y TipoRelacion (F2.6, ROADMAP.md Sec.13.2) ---
+        _extract_informacion_global(root, data, NAMESPACES_CFDI_40)
+        _extract_tipo_relacion(root, data, NAMESPACES_CFDI_40)
+
         # Handle merged "Conceptos" from multiple Concepto nodes
         descriptions = []
         for concepto in root.findall(".//cfdi:Concepto", NAMESPACES_CFDI_40):
@@ -324,6 +501,11 @@ def parse_cfdi_40_invoice(xml_file_path):
                 except ValueError:
                     pass
         data['Conceptos'] = ' | '.join(descriptions) if descriptions else None
+
+        # Captura por-concepto completa (D25/Sec.14.5) - campo interno, ver
+        # docstring de _extract_conceptos_detalle.
+        data["ConceptosDetalle"] = _extract_conceptos_detalle(
+            root, NAMESPACES_CFDI_40)
 
         # Extract and aggregate tax details
         _extract_tax_details(root, data, NAMESPACES_CFDI_40)
@@ -344,7 +526,13 @@ def parse_cfdi_40_invoice(xml_file_path):
                     value = default_val
 
                 # Convert specific Nomina numeric fields to float
-                if col_name in ["Total Sueldos", "Total Deducciones", "Total Otros Pagos", "SBC", "SDI", "ImpuestosRetenidos"]:
+                if col_name in ["Total Percepciones", "Total Sueldos",
+                                "Total Separacion Indemnizacion",
+                                "Total Jubilacion Pension Retiro",
+                                "Total Deducciones", "Total Otros Pagos",
+                                "SBC", "SDI", "ImpuestosRetenidos",
+                                "Monto Recurso Propio SNCF",
+                                "Porcentaje Tiempo SubContratacion"]:
                     try:
                         data[col_name] = float(value)
                     except (ValueError, TypeError):
@@ -390,6 +578,11 @@ def parse_cfdi_40_invoice(xml_file_path):
             except (ValueError, TypeError):
                 data['TotalOtrosPagos'] = 0.0
 
+            # Detalle por-renglon de Nomina (D25/Sec.14.5) - campos internos.
+            (data['PercepcionesDetalle'], data['DeduccionesDetalle'],
+             data['OtrosPagosDetalle'], data['IncapacidadesDetalle']) = \
+                _extract_nomina_detalle(root, NAMESPACES_CFDI_40)
+
         else:
             data['CFDI_Type'] = 'Invoice'
             for _, _, _, col_name in NOMINA_FIELDS_TO_EXTRACT:
@@ -398,6 +591,10 @@ def parse_cfdi_40_invoice(xml_file_path):
             data['TotalExcento'] = None
             data['TotalDeducciones'] = None
             data['TotalOtrosPagos'] = None
+            data['PercepcionesDetalle'] = []
+            data['DeduccionesDetalle'] = []
+            data['OtrosPagosDetalle'] = []
+            data['IncapacidadesDetalle'] = []
 
         # Detect IEDU complement
         iedu_complement = root.find(

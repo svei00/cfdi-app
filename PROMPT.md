@@ -131,12 +131,19 @@ layer), not Step 0 or the first GUI.
 ## Roadmap
 Full phase list (F0–F11), dependencies, and the current phase marker now live
 in **ROADMAP.md §5** — that table supersedes any step list here. Quick recap of
-where things stand: F0 (hygiene), F1 (GUI wrapper), **F2 (stabilization) CLOSED
-and owner-confirmed on real Windows (2026-07-04)**, **F2.5 (results viewer:
-in-GUI table with per-sheet tabs, totals, incremental filter, "Abrir carpeta",
-settings.json) BUILT 2026-07-04 — pending owner confirmation on real machine**
-(ROADMAP.md §11-§12). Next up: F3 (working directory + auto-organization) or
-F4 (SQLite bóveda) — to be decided with the owner once F2.5 is confirmed.
+where things stand: F0 (hygiene), F1 (GUI wrapper), F2 (stabilization), F2.5
+(results viewer) **all CLOSED and owner-confirmed on real Windows**. F4's
+technical design is DONE (ROADMAP.md §14: hybrid relational+JSON elastic
+SQLite; MongoDB ruled out). **F2.6 (missing-field capture wave) BUILT
+2026-07-04** (ROADMAP.md §15) — pending owner confirmation on real machine.
+Along the way found and fixed a real structural bug in the Pagos 2.0 parser
+(container-level fields being nulled by the per-Pago merge loop — see D27),
+beyond the 2 bugs the original audit flagged. Per-concepto capture
+(`ConceptosDetalle` + Nómina `*Detalle`) now lives in-memory per the §14.5
+contract, ready for F4 to persist without re-parsing XML. Next up: F3
+(working directory + auto-organization) or F4 (build the vault, already
+designed) — to be decided with the owner. Safety tag `v0.2.5-estable` marks
+the last known-good state before this wave of parser changes.
 
 Long-term goal: package and sell it (Windows first; users are on Windows), as
 **Lite/Pro/Top editions sharing one codebase** (ROADMAP.md §5.2, decision D10).
