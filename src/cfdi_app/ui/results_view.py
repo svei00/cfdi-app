@@ -83,8 +83,12 @@ INVOICE_TAB = TabConfig(
                      "SubTotal", "Descuento", "IVA 16%", "Retenido IVA", "Retenido ISR",
                      "Total IEPS", "Total", "Moneda", "Tipo De Cambio", "FormaDePago",
                      "Metodo de Pago", "Conceptos", "UUID", "UUID Relacion"],
+    # Ampliado 2026-07-05 (a peticion del dueno, sin necesidad de Fable/Opus -
+    # ambos campos YA eran columnas visibles arriba, solo faltaba poder
+    # buscarlos): UsoCFDI (p.ej. deducibilidad D10 colegiaturas) y Metodo de
+    # Pago (PUE/PPD).
     text_fields=["RFC Emisor", "Nombre Emisor", "RFC Receptor", "Nombre Receptor",
-                "Factura", "UUID", "Conceptos"],
+                "Factura", "UUID", "Conceptos", "UsoCFDI", "Metodo de Pago"],
     amount_fields={"total": "Total", "subtotal": "SubTotal", "descuento": "Descuento",
                   "iva": "IVA 16%"},
     default_amount_field="Total",

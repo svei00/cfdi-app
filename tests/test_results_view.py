@@ -119,6 +119,21 @@ class TestResultsView(unittest.TestCase):
         for panel in self.view._panels.values():
             self.assertEqual(panel.model.rowCount(), 0)
 
+    def test_can_filter_invoices_by_uso_cfdi(self):
+        # A peticion del dueno (2026-07-05): UsoCFDI (p.ej. D10 = colegiaturas)
+        # ya era columna visible en Facturas pero no era buscable.
+        self.view.set_result(self.result)
+        invoice_panel = self.view._panels["invoice_data"]
+        invoice_panel.search_box.setText("D10")
+        self.assertEqual(invoice_panel.proxy.rowCount(), 1)
+
+    def test_can_filter_invoices_by_metodo_de_pago(self):
+        self.view.set_result(self.result)
+        invoice_panel = self.view._panels["invoice_data"]
+        invoice_panel.search_box.setText("PUE")
+        self.assertGreater(invoice_panel.proxy.rowCount(), 0)
+        self.assertLess(invoice_panel.proxy.rowCount(), len(self.result.invoice_data))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
