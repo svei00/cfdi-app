@@ -152,7 +152,8 @@ class _ResultsTabPanel(QWidget):
 
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText(
-            "Buscar por RFC, nombre, folio, UUID, concepto...  o  <2000 / total>=5000")
+            "Buscar por RFC, nombre, folio, UUID, concepto, UsoCFDI, "
+            "metodo de pago...  o  <2000 / total>=5000")
         self.search_box.textChanged.connect(self._on_query_changed)
         layout.addWidget(self.search_box)
 
