@@ -19,18 +19,28 @@ class ProcessWorker(QObject):
     finished = Signal(object)          # core.ProcessResult
     failed = Signal(str)
 
-    def __init__(self, input_folder):
+    def __init__(self, folders):
         super().__init__()
-        self.input_folder = input_folder
+        # `folders` puede ser una carpeta (str, flujo "Abrir carpeta" ad-hoc) o
+        # una lista de carpetas (flujo de la boveda B3). Ambos alimentan el
+        # MISMO motor de core.
+        self.folders = folders
 
     @Slot()
     def run(self):
         try:
-            result = core.process_path(
-                self.input_folder,
-                on_log=self.log.emit,
-                on_progress=lambda c, t, n: self.progress.emit(c, t, n),
-            )
+            if isinstance(self.folders, (list, tuple)):
+                result = core.process_paths(
+                    list(self.folders),
+                    on_log=self.log.emit,
+                    on_progress=lambda c, t, n: self.progress.emit(c, t, n),
+                )
+            else:
+                result = core.process_path(
+                    self.folders,
+                    on_log=self.log.emit,
+                    on_progress=lambda c, t, n: self.progress.emit(c, t, n),
+                )
             self.finished.emit(result)
         except Exception as exc:  # red de seguridad: nunca matar el hilo en silencio
             logger.exception("Error inesperado en ProcessWorker.run")

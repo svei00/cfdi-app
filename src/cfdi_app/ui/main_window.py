@@ -19,15 +19,17 @@
 import logging
 import os
 
-from PySide6.QtCore import QThread, Slot
+from PySide6.QtCore import Qt, QThread, Slot
 from PySide6.QtWidgets import (
-    QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-    QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout, QWidget,
+    QDockWidget, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow,
+    QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout,
+    QWidget,
 )
 
-from cfdi_app import core, paths, settings
+from cfdi_app import core, paths, settings, vault
 from cfdi_app.ui.results_view import ResultsView
 from cfdi_app.ui.state import AppState, widget_states_for
+from cfdi_app.ui.vault_sidebar import VaultSidebar
 from cfdi_app.ui.worker import ProcessWorker
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,8 @@ class MainWindow(QMainWindow):
         core.create_initial_directories()
 
         self._build_ui()
+        self._build_sidebar()
+        self._build_menu()
 
         # Recordar ultima carpeta usada (settings.json - ver D14).
         last = settings.get_last_input_dir()
@@ -85,14 +89,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
+        # Flujo PRIMARIO = barra lateral de la bóveda (izquierda). Esta etiqueta
+        # solo muestra el origen ad-hoc cuando se usa «Abrir carpeta…» del menú
+        # (XMLs sueltos fuera de la bóveda, D11).
         folder_row = QHBoxLayout()
-        self.folder_label = QLabel("Ninguna carpeta seleccionada")
+        self.folder_label = QLabel("Usa la Bóveda (izquierda) o «Archivo → Abrir carpeta…»")
         self.folder_label.setStyleSheet(
             "padding: 6px; border: 1px solid palette(mid); border-radius: 4px;")
-        self.select_btn = QPushButton("Seleccionar carpeta…")
-        self.select_btn.clicked.connect(self.on_select_folder)
         folder_row.addWidget(self.folder_label, stretch=1)
-        folder_row.addWidget(self.select_btn)
         layout.addLayout(folder_row)
 
         action_row = QHBoxLayout()
@@ -133,15 +137,52 @@ class MainWindow(QMainWindow):
         self.log_view.setReadOnly(True)
         layout.addWidget(self.log_view, stretch=1)
 
+    # --- Barra lateral de la boveda (flujo primario, B3) ---------------------
+    def _build_sidebar(self):
+        self.vault_source = vault.FolderVaultSource(paths.BOVEDA_XML_DIR)
+        self.vault_sidebar = VaultSidebar(self.vault_source)
+        self.vault_sidebar.load_requested.connect(self.on_vault_load)
+        self.vault_sidebar.status_message.connect(self.append_log)
+        self.vault_sidebar.single_rfc_violation.connect(self.on_single_rfc_violation)
+
+        self.vault_dock = QDockWidget("Bóveda", self)
+        self.vault_dock.setObjectName("vault_dock")
+        self.vault_dock.setWidget(self.vault_sidebar)
+        self.vault_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.vault_dock)
+
+    def _build_menu(self):
+        menu = self.menuBar()
+
+        archivo = menu.addMenu("&Archivo")
+        self.select_action = archivo.addAction("Abrir carpeta de XMLs sueltos…")
+        self.select_action.triggered.connect(self.on_select_folder)
+        self.save_action = archivo.addAction("Guardar Excel…")
+        self.save_action.triggered.connect(self.on_save_clicked)
+        archivo.addSeparator()
+        salir = archivo.addAction("Salir")
+        salir.triggered.connect(self.close)
+
+        boveda = menu.addMenu("&Bóveda")
+        recargar = boveda.addAction("Recargar bóveda")
+        recargar.triggered.connect(self.vault_sidebar.reload)
+        self.download_action = boveda.addAction("Descargar del SAT…")
+        self.download_action.setEnabled(False)  # F6: CIEC/e.firma (no construido)
+
+        ver = menu.addMenu("&Ver")
+        ver.addAction(self.vault_dock.toggleViewAction())
+
     # --- Maquina de estados --------------------------------------------------
     def _apply_state(self, state: AppState):
         self._state = state
         has_folder = bool(self.input_folder and os.path.isdir(self.input_folder))
         ws = widget_states_for(state, has_folder)
 
-        self.select_btn.setEnabled(ws.select_enabled)
+        self.select_action.setEnabled(ws.select_enabled)
         self.process_btn.setEnabled(ws.process_enabled)
         self.save_btn.setEnabled(ws.save_enabled)
+        self.save_action.setEnabled(ws.save_enabled)
+        self.vault_sidebar.set_busy(state == AppState.PROCESSING)
 
         if state != AppState.PROCESSING:
             self.progress_bar.setRange(0, 1)
@@ -184,7 +225,30 @@ class MainWindow(QMainWindow):
         if not self.input_folder or not os.path.isdir(self.input_folder):
             QMessageBox.warning(self, APP_TITLE, "Selecciona primero una carpeta valida.")
             return
+        self._start_processing(self.input_folder)
 
+    @Slot(list)
+    def on_vault_load(self, folders):
+        """Carga desde la barra lateral de la boveda (lista de carpetas, B3)."""
+        if not folders:
+            return
+        self.input_folder = ""  # una carga de boveda no es una carpeta ad-hoc
+        self.folder_label.setText(
+            f"Bóveda: {len(folders)} carpeta(s) seleccionada(s)")
+        self._start_processing(folders)
+
+    @Slot(list)
+    def on_single_rfc_violation(self, rfcs):
+        """Aviso por clic directo en «Cargar» (regla dura: un RFC por carga)."""
+        QMessageBox.warning(
+            self, "Un RFC a la vez",
+            "No se pueden mezclar dos RFCs en la misma carga.\n\n"
+            "Tienes marcados: " + ", ".join(rfcs) + ".\n"
+            "Deja marcado solo uno y vuelve a intentar.")
+
+    def _start_processing(self, folders):
+        """Arranca el worker con una carpeta (str) o varias (list). Costura unica
+        de ambos flujos: «Abrir carpeta…» ad-hoc y «Cargar» de la boveda."""
         self.log_view.clear()
         self._last_result = None
         self._last_error = None
@@ -198,7 +262,7 @@ class MainWindow(QMainWindow):
         # tanto la limpieza de estado (on_result) como el cierre del hilo,
         # todo mientras el event loop del hilo sigue vivo -> sin fugas.
         self._thread = QThread(self)
-        self._worker = ProcessWorker(self.input_folder)
+        self._worker = ProcessWorker(folders)
         self._worker.moveToThread(self._thread)
 
         self._thread.started.connect(self._worker.run)

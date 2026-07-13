@@ -59,6 +59,19 @@ class TestSetGet(_IsolatedAppDirTestCase):
         self.assertEqual(settings.get_last_input_dir(), r"C:\Entrada")
         self.assertEqual(settings.get_last_save_dir(), r"C:\Salida")
 
+    def test_set_and_get_last_rfc(self):
+        settings.set_last_rfc("GOOH841231EPA")
+        self.assertEqual(settings.get_last_rfc(), "GOOH841231EPA")
+
+    def test_last_rfc_default_is_empty(self):
+        self.assertEqual(settings.get_last_rfc(), "")
+
+    def test_last_rfc_does_not_disturb_dirs(self):
+        settings.set_last_input_dir(r"C:\Entrada")
+        settings.set_last_rfc("GOOH841231EPA")
+        self.assertEqual(settings.get_last_input_dir(), r"C:\Entrada")
+        self.assertEqual(settings.get_last_rfc(), "GOOH841231EPA")
+
     def test_empty_value_is_ignored(self):
         settings.set_last_input_dir(r"C:\Real")
         settings.set_last_input_dir("")

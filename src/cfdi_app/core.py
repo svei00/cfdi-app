@@ -150,31 +150,19 @@ def _collect_target_files(input_folder):
     return targets
 
 
-def process_path(input_folder, on_log=None, on_progress=None):
-    """
-    Recorre input_folder, parsea cada XML/ZIP y devuelve un ProcessResult.
+def _process_target_files(targets, result, on_log=None, on_progress=None):
+    """Parsea una lista YA resuelta de archivos .xml/.zip sobre `result`.
 
-    Callbacks opcionales (para CLI o GUI; pueden ser None):
-        on_log(mensaje:str)               -> mensaje de progreso legible
-        on_progress(actual:int, total:int, nombre:str) -> avance numerico
-
-    Es agnostico de la UI: no imprime ni abre ventanas.
+    Nucleo compartido por `process_path` (una carpeta) y `process_paths`
+    (varias carpetas de la boveda). La logica de parseo por archivo es
+    IDENTICA en ambos flujos: la barra lateral B3 es solo un constructor de
+    lista de archivos delante del mismo motor, no un motor nuevo.
     """
     def log(msg):
         if on_log:
             on_log(msg)
 
-    result = ProcessResult()
-
-    if not input_folder or not os.path.isdir(input_folder):
-        log(f"Ruta invalida: {input_folder}")
-        result.errors.append((str(input_folder), "Ruta invalida o no es un directorio"))
-        return result
-
-    targets = _collect_target_files(input_folder)
     total = len(targets)
-    log(f"Escaneando directorio: {input_folder} ({total} archivo(s) encontrados)")
-
     for index, path in enumerate(targets, start=1):
         file = os.path.basename(path)
         if on_progress:
@@ -207,7 +195,9 @@ def process_path(input_folder, on_log=None, on_progress=None):
                 for label, reason in zip_errors:
                     log(f"   ERROR ({label}): {reason}")
 
-    # Separar por tipo para las hojas del Excel.
+
+def _classify_buckets(result):
+    """Separa los registros parseados por tipo para las hojas del Excel."""
     result.invoice_data = [
         d for d in result.all_parsed_data if d.get("CFDI_Type") == "Invoice"]
     result.nomina_data = [
@@ -215,6 +205,73 @@ def process_path(input_folder, on_log=None, on_progress=None):
     result.pagos_data = [
         d for d in result.all_parsed_data if d.get("CFDI_Type") == "Pago"]
 
+
+def process_path(input_folder, on_log=None, on_progress=None):
+    """
+    Recorre input_folder, parsea cada XML/ZIP y devuelve un ProcessResult.
+
+    Callbacks opcionales (para CLI o GUI; pueden ser None):
+        on_log(mensaje:str)               -> mensaje de progreso legible
+        on_progress(actual:int, total:int, nombre:str) -> avance numerico
+
+    Es agnostico de la UI: no imprime ni abre ventanas.
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    result = ProcessResult()
+
+    if not input_folder or not os.path.isdir(input_folder):
+        log(f"Ruta invalida: {input_folder}")
+        result.errors.append((str(input_folder), "Ruta invalida o no es un directorio"))
+        return result
+
+    targets = _collect_target_files(input_folder)
+    total = len(targets)
+    log(f"Escaneando directorio: {input_folder} ({total} archivo(s) encontrados)")
+
+    _process_target_files(targets, result, on_log=on_log, on_progress=on_progress)
+    _classify_buckets(result)
+    return result
+
+
+def process_paths(folders, on_log=None, on_progress=None):
+    """
+    Igual que `process_path` pero sobre VARIAS carpetas (flujo de la boveda B3).
+
+    Reune los archivos .xml/.zip de todas las carpetas, DEDUPLICA a nivel de
+    archivo (una seleccion de "año completo" mas meses sueltos del mismo año
+    resolveria a rutas solapadas) y los procesa con el MISMO motor que
+    `process_path`. La barra progreso avanza sobre el total combinado.
+
+    Carpetas invalidas se reportan como error pero no detienen al resto.
+    """
+    def log(msg):
+        if on_log:
+            on_log(msg)
+
+    result = ProcessResult()
+    folders = list(folders or [])
+
+    targets = []
+    seen = set()
+    for folder in folders:
+        if not folder or not os.path.isdir(folder):
+            log(f"Ruta invalida: {folder}")
+            result.errors.append((str(folder), "Ruta invalida o no es un directorio"))
+            continue
+        for path in _collect_target_files(folder):
+            key = os.path.normcase(os.path.abspath(path))
+            if key not in seen:
+                seen.add(key)
+                targets.append(path)
+
+    log(f"Escaneando {len(folders)} carpeta(s): "
+        f"{len(targets)} archivo(s) encontrados")
+
+    _process_target_files(targets, result, on_log=on_log, on_progress=on_progress)
+    _classify_buckets(result)
     return result
 
 

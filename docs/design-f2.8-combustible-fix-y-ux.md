@@ -111,6 +111,26 @@ Flow (owner-confirmed 2026-07-09):
 9. F5 note: pre-F5 this enumerates folders; when SQLite lands, the same
    sidebar reads year/month availability from the DB. No UI change.
 
+**CONSTRUIDO 2026-07-12 (decisiones del dueño al arrancar B3):**
+
+- **Modelo de estado = "un árbol grande"** (el dueño eligió esta opción sobre
+  el context-switch estructural): TODOS los RFCs de la bóveda se muestran a la
+  vez, con casilla en cada nivel (RFC/Emitidas·Recibidas/año/mes). La regla
+  dura de un solo RFC se hace cumplir **en la capa de datos**
+  (`vault.build_load_folders` lanza `MultipleRfcError`) y se **confirma** al
+  usuario con un aviso al pulsar "Cargar" (señal `single_rfc_violation` → la
+  ventana muestra el `QMessageBox`; nace de un clic directo, no rompe la regla
+  anti-Bug-1). Comparar periodos del mismo RFC: nativo.
+- **Capa de acceso aislada** en `cfdi_app/vault.py` (`VaultSource` +
+  `FolderVaultSource`), costura para F4: la barra lateral no conoce os.walk ni
+  SQLite. `core.process_paths()` (nuevo) alimenta el motor existente sin
+  tocarlo; `process_path()` intacto.
+- **Descargar** = botón gris + menú deshabilitado (placeholder F6). El flujo
+  real de descarga+auto-categorización y la vista "Reports/árbol global" se
+  entregan a **Fable** (ver ROADMAP.md §10.6).
+- **Iconografía** pendiente (ROADMAP.md §10.5); la UI de B3 es solo texto.
+- "Abrir carpeta…" ad-hoc movido a **menú Archivo** (secundario, D11 intacto).
+
 ---
 
 ## Task C — Copy from results table (priority: MUST)

@@ -588,6 +588,24 @@ contadores). NO son bugs; NO actuar sin que el dueño lo pida.
    siente "un poco directo" con el orden actual de botones. Sin propuesta
    concreta aún; revisar cuando el visor (F2.5) reorganice la ventana de todos
    modos.
+5. **Iconografía de la app (registrado 2026-07-12, al construir B3):** hoy la
+   UI es solo texto. Falta un set de íconos coherente (Bóveda, Cargar,
+   Descargar, Recargar, año/mes, Emitidas/Recibidas). Recomendación técnica
+   registrada: usar un set libre de licencia limpia para empaque LGPL —
+   **Lucide (ISC)** o **Material Symbols (Apache-2.0)**, ambos SVG monolínea
+   theme-ables vía `currentColor` (sirven en claro/oscuro, Sec.5.4)— y reservar
+   SVGs hechos a mano solo para la marca propia (logo CFDI/Bóveda). Evitar packs
+   de licencia dudosa. Tarea de pulido, NO bloquea funcionalidad. Su propia
+   sesión cuando el dueño lo pida.
+6. **Descarga SAT + "Reports/árbol global" (routed a Fable, 2026-07-12):** al
+   diseñar B3 el dueño pidió un flujo **Descargar (Descargar del SAT →
+   auto-categorizar en `BovedaCFDI/{RFC}/…`)** y una vista **"Reports" con el
+   árbol de TODOS los RFCs de la bóveda**. Eso es arquitectura de shell/
+   dashboard (Sec.5.3) + depende de F6 (CIEC/e.firma). Decisión del dueño:
+   **esa parte arquitectónica se entrega a Fable** (prompt maestro vía
+   `fable-session-builder`) y luego se vuelve a Sonnet/Opus para construir. En
+   B3 solo quedó **el botón "Descargar…" deshabilitado (gris)** como placeholder
+   de F6, más el menú **Bóveda → "Descargar del SAT…"** también deshabilitado.
 
 ## 11. Arquitectura de F2.5 — Visor de resultados (SIGUIENTE FASE A CONSTRUIR)
 

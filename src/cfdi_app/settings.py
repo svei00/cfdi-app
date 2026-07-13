@@ -20,6 +20,7 @@ SETTINGS_FILE_NAME = "settings.json"
 _DEFAULTS = {
     "last_input_dir": "",
     "last_save_dir": "",
+    "last_rfc": "",
 }
 
 
@@ -86,4 +87,17 @@ def set_last_save_dir(directory):
         return
     data = load()
     data["last_save_dir"] = directory
+    save(data)
+
+
+def get_last_rfc():
+    """Ultimo RFC activo en la barra lateral de la boveda (B3)."""
+    return load().get("last_rfc", "")
+
+
+def set_last_rfc(rfc):
+    if not rfc:
+        return
+    data = load()
+    data["last_rfc"] = rfc
     save(data)
