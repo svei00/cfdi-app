@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -18,9 +19,9 @@ SRC_DIR = os.path.join(REPO_ROOT, "src")
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox  # noqa: E402
 
-from cfdi_app import paths  # noqa: E402
+from cfdi_app import paths, settings  # noqa: E402
 from cfdi_app.ui.main_window import MainWindow, PAGE_INICIO, PAGE_MODULO  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
@@ -94,6 +95,60 @@ class TestNavigationFlow(_NavigationTestCase):
         self.assertFalse(hasattr(self.window, "vault_dock"))
         menu_titles = [a.text().replace("&", "") for a in self.window.menuBar().actions()]
         self.assertNotIn("Ver", menu_titles)
+
+
+class TestAdoptVault(_NavigationTestCase):
+    """D41: apuntar la boveda a una carpeta EXISTENTE sin mover archivos -
+    distinto de "mover boveda" (que si reubica fisicamente, D39)."""
+
+    def _make_existing_vault(self, name="MiAdminXML"):
+        existing = os.path.join(self._tmp.name, name, "BovedaCFDI")
+        os.makedirs(os.path.join(existing, "AAA010101AAA", "Emitidas", "2025", "01"))
+        return existing
+
+    def test_adopting_existing_folder_sets_vault_root_without_moving_anything(self):
+        existing = self._make_existing_vault()
+
+        with patch("cfdi_app.ui.main_window.QFileDialog.getExistingDirectory",
+                    return_value=existing), \
+             patch("cfdi_app.ui.main_window.QMessageBox.question",
+                    return_value=QMessageBox.Yes):
+            self.window.on_adopt_vault_clicked()
+
+        self.assertEqual(settings.get_vault_root(), existing)
+        self.assertTrue(os.path.isdir(os.path.join(existing, "AAA010101AAA")))
+        self.assertIn("AAA010101AAA", self.window.vault_source.rfcs())
+
+    def test_cancelling_the_folder_dialog_does_not_change_vault_root(self):
+        original = settings.get_vault_root()
+        with patch("cfdi_app.ui.main_window.QFileDialog.getExistingDirectory",
+                    return_value=""):
+            self.window.on_adopt_vault_clicked()
+        self.assertEqual(settings.get_vault_root(), original)
+
+    def test_declining_the_confirmation_does_not_change_vault_root(self):
+        existing = self._make_existing_vault()
+        original = settings.get_vault_root()
+
+        with patch("cfdi_app.ui.main_window.QFileDialog.getExistingDirectory",
+                    return_value=existing), \
+             patch("cfdi_app.ui.main_window.QMessageBox.question",
+                    return_value=QMessageBox.No):
+            self.window.on_adopt_vault_clicked()
+
+        self.assertEqual(settings.get_vault_root(), original)
+
+    def test_adopting_folder_without_valid_rfcs_still_allowed_after_confirm(self):
+        empty_folder = os.path.join(self._tmp.name, "carpeta_vacia")
+        os.makedirs(empty_folder)
+
+        with patch("cfdi_app.ui.main_window.QFileDialog.getExistingDirectory",
+                    return_value=empty_folder), \
+             patch("cfdi_app.ui.main_window.QMessageBox.question",
+                    return_value=QMessageBox.Yes):
+            self.window.on_adopt_vault_clicked()
+
+        self.assertEqual(settings.get_vault_root(), empty_folder)
 
 
 if __name__ == "__main__":

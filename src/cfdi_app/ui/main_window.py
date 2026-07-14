@@ -146,8 +146,20 @@ class MainWindow(QMainWindow):
         boveda.addSeparator()
         recargar = boveda.addAction("Recargar bóveda")
         recargar.triggered.connect(self.vault_sidebar.reload)
-        self.move_vault_action = boveda.addAction("Cambiar ubicación de bóveda…")
+        # Dos acciones DISTINTAS a proposito (feedback real del dueño, D41):
+        # "mover" fisicamente reubica los archivos de la boveda ACTUAL a una
+        # carpeta vacia; "usar otra carpeta" adopta una carpeta EXISTENTE que
+        # ya tiene la estructura RFC/tipo/año/mes (p. ej. una boveda armada
+        # con otra herramienta) SIN mover ni un archivo - solo cambia a donde
+        # apunta la app. Confundirlas arriesgaria datos reales del dueño.
+        self.move_vault_action = boveda.addAction("Mover bóveda a otra carpeta…")
+        self.move_vault_action.setToolTip(
+            "Reubica físicamente los archivos de la bóveda actual")
         self.move_vault_action.triggered.connect(self.on_move_vault_clicked)
+        self.adopt_vault_action = boveda.addAction("Usar otra carpeta como bóveda…")
+        self.adopt_vault_action.setToolTip(
+            "Apunta la app a una carpeta ya existente, sin mover archivos")
+        self.adopt_vault_action.triggered.connect(self.on_adopt_vault_clicked)
         boveda.addSeparator()
         self.download_action = boveda.addAction("Descargar del SAT…")
         self.download_action.setEnabled(False)  # F6: CIEC/e.firma (no construido)
@@ -175,6 +187,7 @@ class MainWindow(QMainWindow):
         self.save_btn.setEnabled(ws.save_enabled and not moving)
         self.save_action.setEnabled(ws.save_enabled and not moving)
         self.move_vault_action.setEnabled(state != AppState.PROCESSING and not moving)
+        self.adopt_vault_action.setEnabled(state != AppState.PROCESSING and not moving)
         self.vault_sidebar.set_busy(state == AppState.PROCESSING or moving)
 
         if state != AppState.PROCESSING:
@@ -382,9 +395,12 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.append_log(f"No se pudo abrir la carpeta: {exc}")
 
-    # --- Cambiar ubicacion de boveda (D39, clic directo del usuario) ---------
+    # --- Mover boveda (D39, clic directo del usuario) ------------------------
     @Slot()
     def on_move_vault_clicked(self):
+        """Reubica FISICAMENTE los archivos de la boveda actual a una carpeta
+        vacia. NO usar para adoptar una carpeta que ya tiene datos - eso es
+        on_adopt_vault_clicked (D41), que no mueve nada."""
         current_root = settings.get_vault_root()
         dest_parent = QFileDialog.getExistingDirectory(
             self, "Elegir carpeta destino para la bóveda", current_root)
@@ -394,12 +410,12 @@ class MainWindow(QMainWindow):
         try:
             new_root = vault.validate_vault_move(current_root, dest_parent)
         except vault.VaultMoveError as exc:
-            QMessageBox.warning(self, "Cambiar ubicación de bóveda", str(exc))
+            QMessageBox.warning(self, "Mover bóveda a otra carpeta", str(exc))
             return
 
         rfc_count = len(self.vault_source.rfcs())
         confirm = QMessageBox.question(
-            self, "Cambiar ubicación de bóveda",
+            self, "Mover bóveda a otra carpeta",
             f"Se moverá TODA la bóveda ({rfc_count} RFC(s)) de:\n{current_root}\n\n"
             f"a:\n{new_root}\n\n¿Continuar?")
         if confirm != QMessageBox.Yes:
@@ -457,3 +473,44 @@ class MainWindow(QMainWindow):
     def _on_move_thread_fully_finished(self):
         self._move_thread = None
         self._move_worker = None
+
+    # --- Adoptar carpeta existente como boveda (D41, clic directo) -----------
+    @Slot()
+    def on_adopt_vault_clicked(self):
+        """Apunta vault_root a una carpeta EXISTENTE (p. ej. una boveda armada
+        con otra herramienta, misma estructura RFC/tipo/año/mes) SIN mover ni
+        borrar un solo archivo - es un cambio de puntero en settings.json, no
+        una operacion de disco. Distinta de on_move_vault_clicked a proposito:
+        el dueño ya tiene datos reales en una ruta ajena a la app y NO quiere
+        que se muevan (feedback real, D39 solo cubria mudanza fisica)."""
+        current_root = settings.get_vault_root()
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Elegir carpeta existente para usar como bóveda", current_root)
+        if not chosen:
+            return
+
+        chosen = os.path.abspath(chosen)
+        if os.path.normcase(chosen) == os.path.normcase(os.path.abspath(current_root)):
+            self.append_log("Esa carpeta ya es la bóveda activa.")
+            return
+
+        rfc_count = len(vault.FolderVaultSource(chosen).rfcs())
+        if rfc_count:
+            found = f"Se encontraron {rfc_count} RFC(s) válidos en esa carpeta."
+        else:
+            found = (
+                "No se encontraron RFCs con el formato esperado en esa carpeta "
+                "(puede estar vacía o no seguir la estructura "
+                "RFC/Emitidas-Recibidas/año/mes).")
+        confirm = QMessageBox.question(
+            self, "Usar otra carpeta como bóveda",
+            f"{found}\n\nLa bóveda activa pasará a ser:\n{chosen}\n\n"
+            "NO se moverá ni se borrará ningún archivo - solo cambia a dónde "
+            "apunta la app. ¿Continuar?")
+        if confirm != QMessageBox.Yes:
+            return
+
+        settings.set_vault_root(chosen)
+        self.vault_source.root = chosen
+        self.vault_sidebar.reload()
+        self.append_log(f"\nBóveda activa: {chosen}")
