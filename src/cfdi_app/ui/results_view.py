@@ -5,11 +5,14 @@
 # solo recibe un core.ProcessResult via set_result(). Esto permite colgarlo
 # despues de un shell/dashboard sin reescribirlo, y que F4 conecte un modelo
 # respaldado en SQLite a la MISMA vista para el modo historial.
+from collections import defaultdict
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QTableView, QTabWidget, QVBoxLayout, QWidget,
+    QApplication, QHBoxLayout, QLabel, QLineEdit, QMenu, QTableView, QTabWidget,
+    QVBoxLayout, QWidget,
 )
 
 from cfdi_app.ui import filtering
@@ -170,6 +173,17 @@ class _ResultsTabPanel(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table, stretch=1)
 
+        # Task C (docs/design-f2.8...): copiar seleccion al portapapeles del
+        # sistema. Ctrl+C estandar + menu contextual "Copiar", ambos
+        # iniciados por el usuario (no choca con la regla anti-dialogos-
+        # modales-automaticos).
+        copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self.table)
+        copy_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        copy_shortcut.activated.connect(self._copy_selection)
+
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+
         self.totals_label = QLabel()
         self.totals_label.setStyleSheet("font-weight: bold; padding: 4px;")
         # Sin word wrap, Qt calcula el ancho MINIMO de la ventana como el
@@ -187,6 +201,34 @@ class _ResultsTabPanel(QWidget):
         self.model = RecordTableModel(records, self.config.display_columns)
         self.proxy.setSourceModel(self.model)
         self._update_totals_label()
+
+    def _show_context_menu(self, pos):
+        menu = QMenu(self.table)
+        copy_action = menu.addAction("Copiar")
+        copy_action.triggered.connect(self._copy_selection)
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _copy_selection(self):
+        selection_model = self.table.selectionModel()
+        if selection_model is None:
+            return
+        indexes = selection_model.selectedIndexes()
+        if not indexes:
+            return
+
+        # Valores mostrados (formateados), en orden visual (ya reflejan
+        # sort/filter activos porque vienen del proxy via la vista).
+        by_row = defaultdict(dict)
+        for index in indexes:
+            value = index.data(Qt.ItemDataRole.DisplayRole)
+            by_row[index.row()][index.column()] = "" if value is None else str(value)
+
+        lines = []
+        for row in sorted(by_row):
+            columns = by_row[row]
+            lines.append("\t".join(columns[col] for col in sorted(columns)))
+
+        QApplication.clipboard().setText("\n".join(lines))
 
     def _on_query_changed(self, text):
         self.proxy.set_query(text)

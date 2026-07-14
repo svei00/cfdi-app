@@ -128,6 +128,8 @@ app (negra porque la GUI no imprime nada), y el .bat espera a que termine.
 | F2 | Estabilización y reestructura | GUI estable + logging + paquete + datos en Documents + limpieza git | F1 | ✅ **CERRADA** — construida 2026-07-03, confirmada por el dueño en máquina real 2026-07-04 (ver §9) |
 | F2.5 | Visor de resultados en la GUI | Tabla del lote procesado con pestañas espejo del Excel (Invoices/Nómina/Pagos) + fila de TOTALES (subtotal, descuento, IVA, total) + botón "Abrir carpeta" + `settings.json` mínimo que recuerda la última carpeta de guardado (D14) + filtro incremental (D15). **Restricción dura D13: Qt Model/View — `QTableView` + `QAbstractTableModel`; `QTableWidget` PROHIBIDO.** Sin SQLite. Definición completa en §11 | F2 | ✅ **CERRADA** — construida y confirmada por el dueño en máquina real 2026-07-04, con 3 rondas de ajustes (ver §12) |
 | F2.6 | Captura de campos faltantes (parsers, UNA sola ola) | Alcance completo definido por la auditoría §13.2 + §13.5: núcleo (InformacionGlobal, TipoRelacion, `RegimenFiscal Emisor` al Excel) + **3 bugs** (typo `TotalTrasladadoBaseIVAExento`→`TotalTrasladosBaseIVAExento`; bug estructural de Pagos que nulificaba TODOS los Totales, D27; clave muerta `15101501` → 35 claves oficiales familia 1510) + "Total Sueldos" resuelto con D26 + IEDU (`autRVOE`, `rfcPago`) + Nómina (NumDiasPagados, TipoContrato, TipoRegimen, NumEmpleado, etc.) + **captura por-concepto EN MEMORIA según el contrato de §14.5 (D25)**: `ConceptosDetalle` y los `*Detalle` de Nómina. Detalle completo del resultado en §15 | F2.5 ✅ + XSDs ✅ + diseño F4 §14 ✅ | ✅ **CONSTRUIDA** 2026-07-04 (ver §15) — falta confirmación del dueño en máquina real |
+| **F2.7** | **Exportación filtrada "espejo del visor"** | Botón nuevo "Guardar filtrado…" (el actual NO cambia): cada hoja del Excel sale según SU propio filtro de pestaña — filtradas recortadas, sin filtro completas. Sufijo derivado del query sanitizado (`_Filtrado_tela`, `_Filtrado_menor2000`; fallback `_Filtrado` si hay varios filtros o queda vacío). Garantía de fidelidad: exportado ≡ visible, probado. Diseño completo en §16 (evaluación crítica incluida — no se aceptó en automático) | F2.5 ✅ (reusa `filter_records`) | ⬅️ **LISTA PARA CONSTRUIR** (diseñada 2026-07-05, D29) |
+| **F2.8** | **Reporte fiscal "Papel de trabajo" (edición Pro)** | Hojas nuevas al final del MISMO Excel: PT-Recibidas (resumen mensual IVA-flujo + detalle con semáforos de deducibilidad y columna manual "Conciliado banco"), PT-Emitidas (resumen + por cliente/CxC), hoja Fundamentos (citas legales verificadas + disclaimer). Gate de edición provisional default "todo habilitado" (D30, matiza D10). Diseño completo en §17 (D30–D35) | F2.7 (orden de etapas pedido por el dueño) + F2.6 ✅ (usa `ConceptosDetalle`) | **DISEÑADA** 2026-07-05 — construir DESPUÉS de F2.7 |
 | F3 | Directorio de trabajo + auto-organización | Settings persistentes (EXTIENDE el `settings.json` sembrado en F2.5, no crea otro mecanismo), checkbox "usar siempre la misma ruta de guardado" (D14), **selector de columnas visibles del visor** (checkboxes, persistido — D18), selector de working dir, archivado `BovedaCFDI\{RFC}\{Emitidas|Recibidas}\{YYYY}\{MM}` (año/mes = fecha de timbrado) | F2.5 | Pendiente |
 | F4 | Bóveda SQLite | Parseo único, metadatos en DB, dedup por UUID, búsqueda. **Diseño técnico COMPLETO en §14** (2026-07-04): esquema híbrido relacional+JSON elástico (D24), tablas cfdi/conceptos/nomina/pagos/pagos_doctos, política de migraciones aditivas, campo nuevo = cero migración | F2 (diseño ✅; construcción pendiente) | Pendiente |
 | F5 | Reportes y filtros | Tablas Qt Model/View + **búsqueda de texto FTS5** (nativa de SQLite) sobre descripciones de conceptos + **filtro por periodo formalizado (D21)**: día, mes, año Y rango personalizado (campos "desde–hasta"), SIEMPRE consultando la bóveda SQLite — **JAMÁS recorriendo carpetas**. **Jerarquía dura de alcance (D21): 1º RFC, 2º Emitidas/Recibidas — todo filtro opera dentro de un RFC y una dirección ya elegidos; NUNCA se mezclan RFCs ni direcciones en un mismo resultado** | F4 | Pendiente |
@@ -452,6 +454,13 @@ el botón "Guardar Excel…" lo use después; poner refs a None en el slot de
 | D26 | "Total Sueldos" de Nómina: **AMBAS** — se agrega el campo oficial `Percepciones@TotalSueldos` como columna nueva Y la columna actual se renombra a "Total Percepciones" (su contenido real) | 2026-07-04 | La etiqueta actual miente a un contador (incluye indemnizaciones/jubilaciones). Capturar ambos evita perder el dato existente y agrega el preciso. Decisión del dueño |
 | D27 | Bug estructural de Pagos corregido en el mismo paso que el typo (no se pausó para volver a Fable): cada bucle de `PAGO_FIELDS_TO_EXTRACT` ahora filtra por el `xpath` declarado en su tupla, en vez de procesar la lista completa contra cualquier nodo | 2026-07-04 | Hallado al escribir la prueba del typo: `MontoTotalPagos` y 10 columnas de Totales SIEMPRE salían `None`, y "Version Pago" nunca se leía. Es un bug inequívoco (sin ambigüedad de diseño) descubierto en el mismo archivo que ya se estaba tocando — el dueño autorizó corregirlo de inmediato dado que el proyecto está en etapa temprana, en vez de regresar a auditoría |
 | D28 | Filtro de Facturas ampliado a `UsoCFDI` y `Metodo de Pago` (ambos ya eran columnas visibles desde D18, solo faltaba poder buscarlos) — hecho directo por Sonnet, sin pasar por Fable/Opus | 2026-07-05 | Ajuste trivial explícitamente autorizado por el dueño ("no need of fable or opus to add this"). Es exactamente el caso previsto en D15 ("dejarlo abierto por si más adelante hace falta un campo"). NO se agregó a Nómina/Pagos porque esos campos no son columnas visibles ahí — repetiría el error de D17 (buscable pero invisible) |
+| D29 | Fase **F2.7** aprobada tras evaluación crítica (§16): exportación filtrada "espejo del visor" — cada hoja según SU propio filtro de pestaña; botón NUEVO separado (el actual jamás cambia de comportamiento); sufijo derivado del query sanitizado con fallback `_Filtrado`; sin leyenda dentro de las hojas (rompería INDEX/MATCH al mover encabezados de la fila 1); fidelidad exportado≡visible como criterio duro | 2026-07-05 | El dueño pidió veredicto de contador senior + UX antes de aceptar la idea. Veredicto: construir — el trabajo contable es por subconjuntos y el visor hoy filtra en pantalla pero exporta TODO (promesa rota/violación WYSIWYG); riesgo técnico bajo porque `filter_records` ya existe pura y probada; el riesgo real es contable (parcial confundido con completo) y se mitiga con el nombre derivado del filtro. "Espejo del visor" y "sufijo derivado" fueron elecciones explícitas del dueño entre opciones presentadas |
+| D30 | Fase **F2.8** "Papel de trabajo fiscal" aprobada tras entrevista de 3 rondas (§17): exclusiva de la edición **Pro**; escalera de reportes por edición (Lite = Excel actual sin PT; Pro = PT de IVA por flujo; Top = análisis ISR/IVA + flujo PF-RESICO vs PM devengado + cotejo IMSS, solo ESBOZADOS). Gate provisional: UN punto de decisión mínimo sobre el mecanismo de configuración existente (F2.5), default = TODO habilitado; en F9 `editions.py` sustituye la bandera sin mover la lógica del reporte. **Matiza D10, no la contradice**: no hay sistema de licencias antes de F9 | 2026-07-05 | El dueño definió el PT como diferenciador comercial de Pro, pero pruebas/beta deben ver todo (no hay licencia real corriendo). Construir el candado completo hoy violaría D10; no dejar NINGUNA costura obligaría a rediseñar en F9 |
+| D31 | Ancla temporal del PT (orientado a IVA por flujo): **PUE → mes de emisión** (se presume pagado); **PPD → mes de `FechaPago` de cada REP** que lo paga (cada parcialidad `ImpPagado` suma a SU mes); PPD sin REP dentro del lote = **"PROVISIONADO"** visible, no deducible/acreditable aún. Lote **multi-mes elegido por el usuario** (opción (a)): procesa la carpeta que abarque el periodo — mes suelto, varios o ejercicio completo para el cierre anual. El histórico automático inter-lote llega con F4 (`pagos_doctos.id_documento`, §14.2). Moneda: todo se normaliza a MXN vía `Tipo De Cambio` (ya capturado; REP usa `TipoCambioP`/`EquivalenciaDR`) | 2026-07-05 | LIVA 5-III (acreditamiento cuando el IVA fue efectivamente pagado en el mes) y LIVA 1o.-B (efectivamente cobrado), verificados TEXTUALMENTE en los .md de fundamentos legales. El dueño entendió y aceptó el límite del lote: el usuario controla el periodo y F4 lo madura |
+| D32 | Clasificación **bancarizado = columna oficial "Bancarizado" de c_FormaPago** (`docs/catalogos_filtrados.md`): Sí = 02, 03, 04, 05, 06, 28, 29; No = 01 y resto; **99 "Por definir" = Opcional → estatus "indeterminado"** (en PPD el 99 es legítimo — la forma real la da `FormaDePagoP` del REP y por ELLA se clasifica; PUE con 99 = anomalía marcable). Reglas de deducibilidad verificadas textualmente: **>$2,000 no bancarizado → no deducible** (LISR 27-III PM / 147-IV PF); **combustible no bancarizado → no deducible sin importar monto** + el comprobante debe traer permiso vigente de Ley de Hidrocarburos (27-III párr. 2, DOF 12-11-2021); combustible/colegiaturas se identifican POR CONCEPTO vía `ClaveProdServ` familias 1510/8612 (`ConceptosDetalle` de F2.6). Nota: 06 "Dinero electrónico" es bancarizado por catálogo aunque el 27-III no lo lista textual | 2026-07-05 | Regla anti-alucinación §13.1 extendida al dominio fiscal: TODA regla del PT quedó anclada a texto legal en `D:\repos\papel-trabajo_contable-fiscal\sources\fundamentos-legales\` o a catálogo oficial en `docs/`. La corazonada del dueño sobre 99/dinero electrónico/tarjeta de servicios resultó CORRECTA contra el catálogo |
+| D33 | Notas de crédito en el PT: solo CFDI tipo **E con `TipoRelacion` 01 o 03 y UUID relacionado explícito**; el neteo ocurre en el **mes del evento** (LIVA Art. 7: quien recibe el descuento/devolución disminuye su acreditable en el mes en que se dé el supuesto, con restitución expresa del IVA), NO en el mes de la factura origen. Tipo E con `TipoRelacion` 07 (aplicación de anticipos) se EXCLUYE del neteo normal y se lista aparte. La columna "NC" es VISIBLE en el resumen — nunca resta silenciosa | 2026-07-05 | El dueño pidió explícitamente "¿qué dice la ley?" en vez de su intuición; LIVA 7 verificado textual. Excluir el 07 evita doble-neteo con la mecánica de anticipos |
+| D34 | PT con **ambas direcciones en hojas SEPARADAS** (jerarquía D21 intacta): Recibidas = análisis de egresos/deducibilidad; Emitidas = ingresos + cuentas por cobrar por cliente ("facturado vs cobrado vs saldo por RFC receptor"). Columna manual **"Conciliado banco"** (el usuario marca ✓ contra su estado de cuenta) con sumas vivas tipo SUMAR.SI → **las hojas PT llevan FÓRMULAS reales de Excel, no valores congelados** (capacidad nueva del exporter, alcance de construcción F2.8). El PT NO sale en la exportación filtrada de F2.7 (un resumen fiscal sobre datos filtrados sería un resumen mentiroso); solo en la exportación completa | 2026-07-05 | "De nada sirve facturar 10M si solo has cobrado 100k" (dueño). La conciliación automática sigue FUERA (D22) — la marca manual es la respuesta práctica al hecho de que el CFDI declara y solo el banco confirma |
+| D35 | Cotejo IMSS = **proyección estimada, edición Top, solo ESBOZADA** (diseño fino en sesión futura): base CFDI (SBC, SDI, días pagados, incapacidades — ya capturados en F2.6) + insumos capturados por el usuario (UMA vigente, prima de riesgo de trabajo, que NO existen en el CFDI ni en la ley como valores). `LSS.md` ya está en fundamentos legales para citar las fórmulas de cuotas al diseñarlo. **NO sustituye al SUA** y el disclaimer lo dirá. Disclaimer general del PT (hoja Fundamentos): "proyección estimada con base en CFDI; no constituye cálculo de impuestos; el uso y criterio son responsabilidad del usuario/contador" | 2026-07-05 | Veredicto honesto pactado con el dueño ("si no es viable, dilo"): el cálculo exacto es SUA; el cotejo estimado sí aporta y cabe en el molde Top con el deslinde que el propio dueño redactó |
 
 ## 8. Instrucciones para modelos constructores (de cualquier fase)
 
@@ -1094,6 +1103,250 @@ cada bucle (`pagos_complement`, `Totales`, `Pago`) filtre por su propio
 ### Pendiente para cerrar F2.6 al 100%
 - [ ] Confirmación del dueño en máquina real (regla §8.4): reprocesar XMLs
   reales y revisar que el Excel de Facturas/Nómina se vea correcto con las
-  columnas nuevas.
+  columnas nuevas. (El dueño ya confirmó parcialmente: el caso de
+  colegiaturas funcionó en su prueba del 2026-07-05.)
 - [ ] Decidir con el dueño la siguiente fase: F3 (directorio de trabajo +
   auto-organización) o F4 (construir la bóveda SQLite, ya diseñada en §14).
+
+## 16. Diseño de F2.7 — Exportación filtrada "espejo del visor" (2026-07-05)
+
+Idea del dueño, evaluada críticamente ANTES de aceptarla (pidió veredicto de
+contador senior + UX, no un sí automático). **Veredicto: SÍ se construye.**
+
+### 16.1 Por qué existe (la evaluación)
+
+- **Contable:** el trabajo real es por subconjuntos (cédula de colegiaturas
+  D10, gastos de combustible, facturas de un proveedor, PPD pendientes). Hoy
+  el visor filtra y recalcula totales en pantalla… y el botón de exportar
+  entrega TODO — una promesa rota a medio camino. El subconjunto ES el
+  entregable que un contador anexa a un papel de trabajo.
+- **UX:** exportar-lo-que-ves es el comportamiento esperado de toda
+  herramienta de datos; la anomalía es no tenerlo (principio WYSIWYG).
+- **Estratégico (del dueño):** un usuario neófito de Excel (sin FILTER(),
+  tablas dinámicas ni Power Query) resuelve todo desde la app — la vuelve
+  indispensable, no solo un conversor.
+- **Riesgo técnico BAJO:** `filter_records()` (la parte difícil) ya existe,
+  es pura y tiene 15 pruebas. Lo nuevo es cableado + un botón. No toca hilos,
+  máquina de estados ni parsers. El flujo actual de "Guardar Excel…" no
+  cambia NI UNA LÍNEA.
+- **Riesgo real (contable, mitigado por diseño):** un archivo parcial
+  confundido con completo meses después. Mitigación: el nombre del archivo
+  documenta el criterio del filtro (16.4).
+- **Traslape con F5 asumido conscientemente:** F5 filtrará el historial
+  (SQLite); esto filtra el lote actual. La costura "exportar subconjunto"
+  construida aquí la reutiliza F5.
+
+### 16.2 Alcance — "espejo del visor" (decisión del dueño)
+
+El Excel exportado refleja EXACTAMENTE lo que el visor muestra: **cada hoja
+sale según SU propio filtro** — pestañas con filtro activo salen recortadas,
+pestañas sin filtro salen COMPLETAS. (Cada pestaña ya tiene su caja de
+búsqueda independiente, así que Facturas puede salir filtrada por "tela"
+mientras Nómina sale entera.) Degradación natural: sin ningún filtro activo,
+el resultado es idéntico al export normal — por eso el botón se deshabilita
+en ese caso (16.3).
+
+### 16.3 UI
+
+- **Botón NUEVO separado** ("Guardar filtrado…"), junto al "Guardar Excel…"
+  actual. Habilitado SOLO cuando el estado es DONE **y** al menos una pestaña
+  tiene filtro activo con >0 filas visibles.
+- El botón actual NO cambia de comportamiento jamás (cambiar el significado
+  de un botón según estado invisible es la clase de sorpresa que este
+  proyecto mata desde el Bug 1).
+- Reglas de oro §6.2 intactas: el diálogo de guardado nace del clic.
+- Tras guardar, los botones "Abrir archivo"/"Abrir carpeta" apuntan al último
+  archivo guardado, igual que hoy (sin lógica especial).
+
+### 16.4 Nombre de archivo (decisión del dueño: derivado del filtro)
+
+- Base: el MISMO nombre que hoy (`build_default_filename` sobre el lote
+  completo — RFC/tipo/fecha no cambian por filtrar) + sufijo.
+- **Sufijo derivado:** `_Filtrado_<texto>` donde `<texto>` es el query
+  sanitizado: solo `[A-Za-z0-9_-]` (espacios→`_`, resto se elimina),
+  operadores traducidos ANTES de sanitizar (`<`→`menor`, `>`→`mayor`,
+  `<=`→`hasta`, `>=`→`desde`), truncado a ~30 caracteres.
+  Ej.: `XAXX_Emitidas_2025_02_Filtrado_tela.xlsx`,
+  `..._Filtrado_menor2000.xlsx`.
+- **Fallbacks:** si hay filtros activos en VARIAS pestañas a la vez, o el
+  texto queda vacío tras sanitizar → sufijo `_Filtrado` a secas.
+- El diálogo de guardado propone este nombre y el usuario puede editarlo ahí
+  mismo (gratis, es el diálogo estándar).
+- **NO se agrega leyenda "filtros aplicados" DENTRO de las hojas:** movería
+  los encabezados fuera de la fila 1 y rompería fórmulas INDEX/MATCH de los
+  usuarios. El nombre del archivo es el único marcador de parcialidad.
+
+### 16.5 Garantía de fidelidad (criterio de construcción duro)
+
+La exportación DEBE usar la misma `filter_records()` con el mismo query y la
+misma `TabConfig` que el visor — y una prueba debe afirmar que las filas
+exportadas son IDÉNTICAS (misma cantidad y mismos registros) a las filas
+visibles del proxy en ese momento. Si el visor y el archivo pueden divergir,
+la función pierde su razón de ser.
+
+### 16.6 Criterios de aceptación de F2.7
+
+1. Con filtro "tela" en Facturas y Nómina sin filtro: el Excel trae Facturas
+   recortada (solo coincidencias) y Nómina completa; el nombre termina en
+   `_Filtrado_tela.xlsx`.
+2. Con filtro `<2000`: sufijo `_Filtrado_menor2000.xlsx`.
+3. Con filtros en dos pestañas: sufijo `_Filtrado.xlsx`.
+4. Sin ningún filtro activo: el botón "Guardar filtrado…" está deshabilitado.
+5. El botón "Guardar Excel…" actual se comporta EXACTAMENTE igual que antes
+   (prueba de regresión).
+6. Prueba de fidelidad de 16.5 en verde.
+7. Suite completa verde + confirmación del dueño en máquina real (§8.4).
+
+## 17. Diseño de F2.8 — Reporte fiscal "Papel de trabajo" (edición Pro) (2026-07-05)
+
+Diseñado por entrevista de 3 rondas con el dueño + verificación **con ley en
+mano**: todas las reglas fiscales se anclaron a texto legal en
+`D:\repos\papel-trabajo_contable-fiscal\sources\fundamentos-legales\` (LISR,
+LIVA, CFF, LIEPS, reglamentos, RMF 2026, LSS) o a catálogo oficial en
+`docs/catalogos_filtrados.md`. La regla anti-alucinación §13.1 queda
+EXTENDIDA al dominio fiscal/contable: ningún artículo se cita de memoria; lo
+no verificado se marca "POR UBICAR". Decisiones: D30–D35.
+
+### 17.1 Objetivo (una frase)
+
+Convertir el lote procesado en un papel de trabajo mensual de IVA por flujo
+de efectivo — qué está efectivamente pagado/cobrado, qué es
+deducible/acreditable, qué queda provisionado — por mes y año, sin que el
+contador arme nada a mano.
+
+### 17.2 Reglas de negocio confirmadas (cada una con su fuente)
+
+| # | Regla | Fuente (estado) |
+|---|---|---|
+| R1 | Pagos >$2,000 deben ser bancarizados para deducirse | LISR 27-III (PM) y 147-IV (PF) — **texto verificado** |
+| R2 | Combustibles: bancarizado SIEMPRE, sin importar monto; el CFDI debe traer permiso vigente de Ley de Hidrocarburos | LISR 27-III párr. 2 (DOF 12-11-2021) — **texto verificado** |
+| R3 | IVA acreditable solo cuando fue efectivamente pagado en el mes | LIVA 5-III — **texto verificado** |
+| R4 | "Efectivamente cobrado/pagado": anticipos cuentan; cheque hasta su cobro; cualquier extinción de obligaciones | LIVA 1o.-B — **texto verificado** |
+| R5 | Devoluciones/descuentos/bonificaciones (NC) se netean en el MES en que ocurren, con restitución expresa del IVA | LIVA 7 — **texto verificado** |
+| R6 | Bancarizado se clasifica por la columna oficial del catálogo: Sí = 02,03,04,05,06,28,29; No = 01 y resto; 99 = Opcional/indeterminado | `docs/catalogos_filtrados.md` (c_FormaPago) — **verificado** |
+| R7 | PPD se considera pagado solo con su REP; el mes lo da `FechaPago`; la forma de pago real es `FormaDePagoP` del REP | Mecánica CFDI/Anexo 20; regla RMF del plazo del REP **POR UBICAR** en RMF_2026 (ya en fundamentos) al redactar la hoja |
+| R8 | Combustible y colegiaturas se identifican POR CONCEPTO vía `ClaveProdServ` (familias 1510 / 8612) | Catálogo + `ConceptosDetalle` (F2.6, D25) — **verificado** |
+
+Notas de borde: (a) 06 "Dinero electrónico" es bancarizado por catálogo
+aunque LISR 27-III no lo nombra textual — se clasifica por catálogo, con nota
+en la hoja Fundamentos; (b) FormaPago 99 es legítimo en PPD (la forma real
+llega en el REP); en PUE es anomalía marcable, no error; (c) sigue vigente
+D22: el CFDI declara, solo el banco confirma — la columna "Conciliado banco"
+(17.4) es la respuesta práctica, manual a propósito.
+
+### 17.3 Ancla temporal y alcance del lote (D31)
+
+- **PUE** → mes de su fecha de emisión (se presume pagado).
+- **PPD** → mes de `FechaPago` de cada REP; cada parcialidad (`ImpPagado`)
+  suma a SU mes; `NumParcialidad`/`ImpSaldoInsoluto` ya se capturan y
+  permiten mostrar saldo restante por factura.
+- **PPD sin REP en el lote** → fila "PROVISIONADO — no deducible/acreditable
+  aún": visible, jamás desaparece en silencio.
+- El **usuario elige el periodo procesando la carpeta que lo abarque** (un
+  mes, varios, o el ejercicio completo para el cierre anual — donde el cruce
+  PPD↔REP queda completo). El histórico automático entre lotes llega con F4.
+- **Moneda:** todo importe se normaliza a MXN (importe × `Tipo De Cambio`,
+  columna ya capturada con default 1.0; en REPs, `TipoCambioP`/`EquivalenciaDR`).
+
+### 17.4 Estructura de hojas (mismo archivo Excel, al final; D34)
+
+Pro — lo que F2.8 construye:
+
+1. **PT-Recibidas (resumen)** — una fila por mes/año con columnas: PUE
+   bancarizado; PUE efectivo deducible (≤ $2,000); PUE efectivo NO deducible
+   (> $2,000); Combustible no deducible (efectivo, cualquier monto); PPD
+   facturado; PPD pagado (vía REP del mes); PPD provisionado; NC recibidas
+   (netean, R5); Subtotal / Descuento / IVA / Total netos; IVA acreditable
+   estimado del mes.
+2. **PT-Recibidas (detalle)** — una fila por CFDI recibido: datos base +
+   FormaPago efectiva (de la factura, o del REP si es PPD) + mes asignado +
+   **ESTATUS con formato condicional**: verde = deducible; rojo = efectivo
+   > $2,000; rojo = combustible en efectivo; ámbar = PPD provisionado;
+   ámbar = 99 indeterminado. Más la columna manual **"Conciliado banco"**
+   (el usuario marca ✓ contra su estado de cuenta) cuyas sumas usan fórmulas
+   vivas (SUMAR.SI) — **las hojas PT llevan fórmulas reales de Excel, no
+   valores congelados** (capacidad nueva del exporter; alcance de F2.8).
+3. **PT-Emitidas (resumen)** — por mes: facturado PUE/PPD, cobrado vía REP,
+   por cobrar, NC emitidas, IVA trasladado efectivamente cobrado.
+4. **PT-Emitidas (por cliente)** — facturado vs cobrado vs saldo por RFC
+   receptor, ordenado por saldo ("empresa sutanita no me ha pagado").
+5. **Fundamentos** — citas legales de 17.2 + disclaimer: "proyección estimada
+   con base en CFDI; no constituye cálculo de impuestos; el uso y criterio
+   son responsabilidad del usuario/contador".
+
+Emitidas y Recibidas JAMÁS se mezclan en una misma hoja (D21). Los
+encabezados de TODAS las hojas PT van en fila 1 (compatibilidad INDEX/MATCH,
+misma razón que 16.4).
+
+Top — solo ESBOZO (diseño fino en sesión futura, D35): "Análisis IVA"
+(acreditable vs trasladado por flujo), "Análisis ISR" (PM devengado /
+PF-RESICO flujo), "Cotejo IMSS" (proyección estimada: base CFDI + UMA y
+prima de riesgo capturadas por el usuario; LSS.md ya en fundamentos; NO
+sustituye SUA).
+
+### 17.5 Fórmulas conceptuales (español llano — el constructor las traduce)
+
+- PUE efectivo no deducible (mes M) = Σ Total de CFDI tipo I recibidos con
+  MetodoPago = PUE y FormaPago = 01 y Total > 2000 y mes(emisión) = M. [R1]
+- Combustible no deducible (M) = Σ Importe de CONCEPTOS con ClaveProdServ en
+  familia 1510 cuando la FormaPago efectiva = 01, sin umbral. [R2, R8]
+- PPD pagado (M) = Σ ImpPagado de DoctoRelacionado cuyos REP tengan FechaPago
+  en M, casados por IdDocumento = UUID de la factura PPD del lote. [R7]
+- NC aplicadas (M) = Σ Total de CFDI tipo E con TipoRelacion 01 o 03 y UUID
+  relacionado presente, asignadas al mes del evento; tipo E con TipoRelacion
+  07 (anticipos) se lista aparte, fuera del neteo. [R5, D33]
+- IVA acreditable estimado (M) = IVA de PUE deducibles de M + IVA de los
+  ImpPagado de REPs de M (ImpuestosDR) − IVA restituido por NC de M. [R3, R5]
+- Suma conciliada = SUMAR.SI(columna de marca, "✓", columna de importe). [D34]
+
+### 17.6 Ediciones y gate provisional (D30)
+
+Lite = Excel actual sin PT · Pro = hojas PT de este diseño · Top = análisis
+ISR/IVA/flujo + cotejo IMSS (nombre comercial pendiente). Desde F2.8 existe
+UN punto de decisión mínimo (bandera sobre el mecanismo de configuración de
+F2.5) con default = TODO habilitado: pruebas y beta ven todo. En F9,
+`editions.py` sustituye la bandera sin mover la lógica del reporte. Cero
+validación de licencias antes de F9.
+
+### 17.7 Preguntas abiertas (confirmar con el dueño al construir)
+
+1. Nombre comercial de la edición Top.
+2. Regla RMF vigente del plazo de emisión del REP: ubicarla y citarla desde
+   `RMF_2026-DOF-28122025.md` (ya en fundamentos) — NO citar de memoria.
+3. Facturas globales (`InformacionGlobal`): ¿su Periodicidad/Meses/Año
+   sustituyen al mes de emisión como ancla en PT-Emitidas?
+4. Umbral $2,000: el texto legal dice "pagos cuyo monto exceda de $2,000.00"
+   — confirmar criterio práctico (default propuesto: monto total pagado, IVA
+   incluido).
+5. Discrepancia menor detectada: el catálogo XLS vigente trae 7 códigos de
+   `TipoRelacion`; el `catCFDI.xsd` enumeraba 9 (§15.2). Para el PT solo
+   importan 01/03/07; verificar el resto solo si algún día se usan.
+
+### 17.8 Lo que F2.8 NO cubre (para que el constructor no invente alcance)
+
+- Nombres de archivos/clases/funciones Python: los decide la construcción.
+- Conciliación bancaria automática (D22) — la marca ✓ es manual a propósito.
+- Cálculo real/definitivo de impuestos: TODO es proyección estimada.
+- Las hojas Top: solo esbozo; su diseño fino es otra sesión de análisis.
+- Estatus SAT de los CFDI (vigente/cancelado) — eso es F7.
+- Persistencia/histórico entre lotes — eso es F4.
+- El export filtrado (F2.7) NO incluye hojas PT (D34); F2.7 se construye
+  ANTES y F2.8 no la modifica.
+
+### 17.9 Criterios de aceptación de F2.8
+
+1. Lote multi-mes real: el resumen mensual de PT-Recibidas cuadra contra las
+   hojas Invoices/Pagos existentes (mismas fuentes, sumas consistentes).
+2. Un PPD con REP en el lote aparece pagado en el mes del REP; sin REP,
+   aparece PROVISIONADO.
+3. Un concepto de combustible (familia 1510) pagado con FormaPago 01 sale
+   marcado NO deducible aunque valga $500.
+4. Un CFDI de $2,500 con FormaPago 01 sale NO deducible; el mismo con 03
+   sale deducible.
+5. Una NC (tipo E, TipoRelacion 01, UUID relacionado) neta en su mes y es
+   visible como columna propia.
+6. La columna "Conciliado banco" acepta marcas del usuario y las sumas
+   conciliadas recalculan EN Excel (fórmulas vivas).
+7. Con la bandera de edición en "Lite", el Excel sale SIN hojas PT y es
+   idéntico al actual (prueba de regresión); default = con PT.
+8. Suite completa verde + confirmación del dueño en máquina real (§8.4).

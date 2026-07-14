@@ -140,7 +140,10 @@ Along the way found and fixed a real structural bug in the Pagos 2.0 parser
 (container-level fields being nulled by the per-Pago merge loop — see D27),
 beyond the 2 bugs the original audit flagged. Per-concepto capture
 (`ConceptosDetalle` + Nómina `*Detalle`) now lives in-memory per the §14.5
-contract, ready for F4 to persist without re-parsing XML. Next up: F3
+contract, ready for F4 to persist without re-parsing XML. **F2.7 (filtered
+export, "mirror of the viewer") designed 2026-07-05 and ready to build**
+(ROADMAP.md §16, D29): new separate button, each sheet exports per its own
+tab filter, filename suffix derived from the sanitized query. Then F3
 (working directory + auto-organization) or F4 (build the vault, already
 designed) — to be decided with the owner. Safety tag `v0.2.5-estable` marks
 the last known-good state before this wave of parser changes.
