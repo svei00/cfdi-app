@@ -1,6 +1,7 @@
 # --- cfdi_processor/constants.py ---
 # This file defines global constants, such as XML namespaces, mapping dictionaries,
 # and column orderings used across different modules of the CFDI processor.
+import re
 
 # --- XML NAMESPACES ---
 # Define XML namespaces for different CFDI versions and complements
@@ -579,12 +580,69 @@ FUEL_PROD_SERV_CODES = [
     "15101609", "15101610", "15101611", "15101612", "15101613", "15101614",
     "15101700", "15101701", "15101702", "15101800", "15101801",
 ]
-# Define common units for fuel
-FUEL_UNITS = ["LTR", "LITRO", "GAL", "GALON", "KL", "KILO", "KILOGALON", "E48"]
-# Define keywords to look for in Description (case-insensitive) - respaldo
-# cuando el emisor no usa una ClaveProdServ de la familia 1510.
-FUEL_KEYWORDS = ["MAGNA", "PREMIUM", "DIESEL",
-                 "GASOLINA", "COMBUSTIBLE", "GAS"]
+# --- Deteccion de combustible por texto: respaldo cuando el emisor NO usa una
+# ClaveProdServ de la familia 1510 (D19-D22: combustible = inferencia).
+#
+# Fix F2.8 (docs/design-f2.8-combustible-fix-y-ux.md, Task A): antes esto era
+# UNA sola lista FUEL_UNITS + substring match, y disparaba falsos positivos.
+# Caso real: "CARGAS Y DESCARGAS-1TON" (flete, unidad E48) se marcaba como
+# combustible porque (a) E48 estaba en FUEL_UNITS y (b) "GAS" empataba como
+# SUBSTRING dentro de "carGASy descarGAS". Dos causas, dos arreglos:
+#   1. Matching por PALABRA COMPLETA (ver is_combustible_concepto).
+#   2. E48 degradada: es la "Unidad de servicio" generica (Telmex, CFE, fletes,
+#      aseguradoras), no es especifica de combustible -> exige palabra clave
+#      INEQUIVOCA.
+#
+# Unidades volumetricas: claves REALES de c_ClaveUnidad (verificadas contra
+# docs/catCFDI.xsd). En estas, una palabra clave laxa ("GAS"/"COMBUSTIBLE") ya
+# basta. La lista vieja incluia "LITRO","GAL","GALON","KILO","KILOGALON" que NO
+# son claves sino descripciones -> nunca podian empatar el atributo ClaveUnidad
+# y se eliminan por muertas (no cambia el comportamiento observable).
+# Ampliada 2026-07-14 (a peticion del dueno, "escalabilidad"): GLL/GLI
+# (galon US/imperial), MTQ (metro cubico), BLL (barril) - todas claves reales
+# verificadas en docs/catCFDI.xsd, usadas por importadores/mayoristas de
+# combustible que no facturan en litros.
+FUEL_VOLUMETRIC_UNITS = ["LTR", "KL", "GLL", "GLI", "MTQ", "BLL"]
+# Unidad de servicio generica: solo cuenta como combustible con palabra clave
+# inequivoca (aqui vivia el falso positivo del flete).
+FUEL_SERVICE_UNITS = ["E48"]
+
+# Palabras INEQUIVOCAS: valen en cualquier unidad de combustible (incluida E48).
+FUEL_KEYWORDS_STRONG = ["MAGNA", "PREMIUM", "DIESEL", "GASOLINA"]
+# Palabras laxas: solo se aceptan junto a una unidad volumetrica, nunca con E48.
+FUEL_KEYWORDS_WEAK = ["GAS", "COMBUSTIBLE"]
+
+# Tokeniza la descripcion en palabras completas (incluye acentos/N). Empatar por
+# palabra COMPLETA -no substring- es lo que impide que "CARGAS"/"DESCARGAS"/
+# "GASTOS"/"ENGASTE" disparen la palabra "GAS".
+_FUEL_WORD_RE = re.compile(r"[0-9A-ZÁÉÍÓÚÜÑ]+")
+
+
+def is_combustible_concepto(clave_prod_serv, clave_unidad, descripcion):
+    """True si un concepto CFDI es combustible (D19-D22: inferencia).
+
+    Orden de senales:
+      1. ClaveProdServ en la familia oficial 1510 -> combustible (senal dura).
+      2. Heuristica de texto de respaldo, con matching por PALABRA COMPLETA:
+         - unidad volumetrica (LTR/KL): cualquier palabra clave (fuerte o laxa).
+         - unidad de servicio (E48): solo palabras INEQUIVOCAS (MAGNA/PREMIUM/
+           DIESEL/GASOLINA); nunca la laxa "GAS"/"COMBUSTIBLE".
+         - cualquier otra unidad: no dispara la heuristica de texto.
+    """
+    if (clave_prod_serv or "").strip() in FUEL_PROD_SERV_CODES:
+        return True
+
+    unidad = (clave_unidad or "").upper().strip()
+    words = set(_FUEL_WORD_RE.findall((descripcion or "").upper()))
+    if not words:
+        return False
+
+    if unidad in FUEL_VOLUMETRIC_UNITS:
+        return any(k in words for k in FUEL_KEYWORDS_STRONG) or \
+            any(k in words for k in FUEL_KEYWORDS_WEAK)
+    if unidad in FUEL_SERVICE_UNITS:
+        return any(k in words for k in FUEL_KEYWORDS_STRONG)
+    return False
 
 # ClaveProdServ oficiales de servicios educativos (familia 8612) - permite
 # detectar colegiaturas (UsoCFDI D10) por clave en vez de solo por texto.

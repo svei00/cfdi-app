@@ -8,7 +8,7 @@ from cfdi_app.constants import (
     NAMESPACES_CFDI_40, TIPO_COMPROBANTE_MAP, FORMA_PAGO_MAP, METODO_PAGO_MAP,
     USO_CFDI_MAP, REGIMEN_FISCAL_RECEPTOR_MAP, INVOICE_COLUMN_ORDER,
     CFDI_COMMON_CHILD_ELEMENTS_TO_EXTRACT, NOMINA_FIELDS_TO_EXTRACT,
-    FUEL_PROD_SERV_CODES, FUEL_UNITS, FUEL_KEYWORDS
+    is_combustible_concepto
 )
 
 # Define the full URI for the CFDI namespace for direct attribute access
@@ -611,17 +611,14 @@ def parse_cfdi_40_invoice(xml_file_path):
             detected_complements) if detected_complements else None
         data['Archivo XML'] = os.path.basename(xml_file_path)
 
-        # --- Combustible Detection Logic ---
+        # --- Combustible Detection Logic (logica compartida en constants.py;
+        # fix falso positivo F2.8, ver is_combustible_concepto) ---
         combustible_detected = False
         for concepto in root.findall(".//cfdi:Concepto", NAMESPACES_CFDI_40):
-            clave_prod_serv = concepto.get("ClaveProdServ", "").strip()
-            unidad = concepto.get("ClaveUnidad", "").upper().strip()
-            description = concepto.get("Descripcion", "").upper().strip()
-
-            if clave_prod_serv in FUEL_PROD_SERV_CODES:
-                combustible_detected = True
-                break
-            if unidad in FUEL_UNITS and any(keyword in description for keyword in FUEL_KEYWORDS):
+            if is_combustible_concepto(
+                    concepto.get("ClaveProdServ", ""),
+                    concepto.get("ClaveUnidad", ""),
+                    concepto.get("Descripcion", "")):
                 combustible_detected = True
                 break
         data["Combustible"] = "Si   " if combustible_detected else "No"
