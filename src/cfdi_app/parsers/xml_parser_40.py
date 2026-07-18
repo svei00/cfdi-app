@@ -631,6 +631,11 @@ def parse_cfdi_40_invoice(xml_file_path):
             data['Factura'] = folio
         else:
             data['Factura'] = None
+        # Task B2 (docs/design-f2.8...): Serie y Folio por separado, ademas de
+        # Factura (que se queda intacto, D11 - lo usan los INDEX/MATCH del
+        # dueno). Puramente aditivo, no cambia la logica de arriba.
+        data['Serie'] = serie or None
+        data['Folio'] = folio or None
 
         data["Verificado ó Asoc."] = ""
         data["Estado SAT"] = ""

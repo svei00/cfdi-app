@@ -130,7 +130,16 @@ INVOICE_COLUMN_ORDER = [
     "Fecha Timbrado",
     "EstadoPago",
     "FechaPago",
-    "Factura",            # Merged field: Serie + Folio
+    "Factura",            # Merged field: Serie + Folio - NUNCA se quita/mueve (D11)
+    # Task B2 (docs/design-f2.8-combustible-fix-y-ux.md): Serie y Folio por
+    # separado, junto a Factura, para VLOOKUP/INDEX-MATCH contra ERPs donde
+    # partir "A-123" en Excel es ambiguo si la Serie trae guion. Aditivo puro:
+    # Factura sigue igual (parsers arriba). NOTA: aun no aparecen en el visor
+    # (results_view.py) porque el selector real de columnas checkboxes (D18)
+    # esta pendiente de F3 (ROADMAP.md linea ~133) - cuando F3 se construya,
+    # agregar "Serie" y "Folio" ahi, ocultos por default.
+    "Serie",
+    "Folio",
     "UUID",
     "UUID Relacion",
     # Agregado F2.6 (ROADMAP.md Sec.13.2): el codigo crudo del catalogo oficial
