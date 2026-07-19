@@ -7,44 +7,57 @@
 # CORRECCION DE FONDO DEL BUG 1 ("GUI congelada"): ver ROADMAP.md Sec.3 y 6.2.
 # Reglas de oro de este archivo (documentadas ahi, repetidas aqui a proposito):
 #   1. Los slots conectados a senales del worker/hilo (on_result, on_error,
-#      on_progress) SOLO mutan estado y widgets. JAMAS abren dialogos modales.
+#      on_progress, on_move_finished, on_move_failed) SOLO mutan estado y
+#      widgets. JAMAS abren dialogos modales.
 #   2. Todo dialogo modal nace de un clic directo del usuario (on_select_folder,
-#      on_save_clicked). Un dialogo iniciado por clic siempre tiene foco.
+#      on_save_clicked, on_move_vault_clicked). Un dialogo iniciado por clic
+#      siempre tiene foco.
 #   3. En estado DONE, el resumen se muestra DENTRO de la ventana (log), no en
 #      un QMessageBox.
 #   4. La exportacion ocurre en el hilo principal al hacer clic en "Guardar
 #      Excel...".
 #   5. Tras exportar con exito: se habilita el boton "Abrir archivo" - NO se
 #      dispara un QMessageBox.question automatico.
+#
+# B3-R2 (D36): el central widget es un QStackedWidget de dos paginas -
+# InicioPage (caratula) y AdminBovedaPage (modulo "Administrador de Boveda",
+# que absorbe el arbol de boveda + resultados + log; reemplaza al
+# QDockWidget, que se elimino por completo junto con el menu Ver). Los hilos
+# y senales de procesamiento (y de mudanza de boveda, D39) siguen viviendo
+# AQUI, no en las paginas: cambiar de pagina nunca cancela un proceso en curso.
 import logging
 import os
 
-from PySide6.QtCore import Qt, QThread, Slot
+from PySide6.QtCore import QThread, Slot
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
-    QDockWidget, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow,
-    QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout,
-    QWidget,
+    QFileDialog, QMainWindow, QMessageBox, QStackedWidget,
 )
 
 from cfdi_app import core, paths, settings, vault
-from cfdi_app.ui.results_view import ResultsView
+from cfdi_app.ui.admin_boveda_page import AdminBovedaPage
+from cfdi_app.ui.inicio_page import InicioPage
 from cfdi_app.ui.state import AppState, widget_states_for
-from cfdi_app.ui.vault_sidebar import VaultSidebar
+from cfdi_app.ui.vault_move_worker import VaultMoveWorker
 from cfdi_app.ui.worker import ProcessWorker
 
 logger = logging.getLogger(__name__)
 
 APP_TITLE = "Procesador CFDI"
 
+PAGE_INICIO = 0
+PAGE_MODULO = 1
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.resize(900, 700)
+        self.resize(1100, 750)
 
         self.input_folder = ""
         self._state = AppState.IDLE
+        self._vault_move_busy = False
 
         # Refs de hilo con nombre "_thread"/"_worker" (NO "self.thread": eso
         # sombrearia el metodo heredado QObject.thread() - defecto contribuyente
@@ -55,10 +68,12 @@ class MainWindow(QMainWindow):
         self._last_error = None
         self._last_saved_path = None
 
+        self._move_thread = None
+        self._move_worker = None
+
         core.create_initial_directories()
 
         self._build_ui()
-        self._build_sidebar()
         self._build_menu()
 
         # Recordar ultima carpeta usada (settings.json - ver D14).
@@ -72,84 +87,43 @@ class MainWindow(QMainWindow):
 
     # --- Construccion de la UI ---------------------------------------------
     def _build_ui(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        self._stack = QStackedWidget()
+        self.setCentralWidget(self._stack)
 
-        title = QLabel("Procesador de CFDI XML → Excel")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
-        subtitle = QLabel(
-            "Selecciona una carpeta con XMLs (o .zip) del SAT. "
-            "Detecta CFDI 3.3 / 4.0, Nomina y Pagos, y genera un Excel."
-        )
-        subtitle.setWordWrap(True)
-        subtitle.setStyleSheet("color: gray;")
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
+        self.inicio_page = InicioPage()
+        self.inicio_page.open_vault_module.connect(self.show_module_page)
+        self._stack.addWidget(self.inicio_page)
 
-        # Flujo PRIMARIO = barra lateral de la bóveda (izquierda). Esta etiqueta
-        # solo muestra el origen ad-hoc cuando se usa «Abrir carpeta…» del menú
-        # (XMLs sueltos fuera de la bóveda, D11).
-        folder_row = QHBoxLayout()
-        self.folder_label = QLabel("Usa la Bóveda (izquierda) o «Archivo → Abrir carpeta…»")
-        self.folder_label.setStyleSheet(
-            "padding: 6px; border: 1px solid palette(mid); border-radius: 4px;")
-        folder_row.addWidget(self.folder_label, stretch=1)
-        layout.addLayout(folder_row)
+        # D39: la ruta ACTIVA de la boveda viene de settings, no del default
+        # fijo de paths.py (que puede haber quedado atras tras una mudanza).
+        self.vault_source = vault.FolderVaultSource(settings.get_vault_root())
+        self.admin_page = AdminBovedaPage(self.vault_source)
+        self.admin_page.home_btn.clicked.connect(self.show_inicio_page)
+        self._stack.addWidget(self.admin_page)
 
-        action_row = QHBoxLayout()
-        self.process_btn = QPushButton("Procesar")
+        # Alias para que el resto de la clase (logica preexistente, sin
+        # cambios de comportamiento) siga hablando de estos widgets por su
+        # nombre de siempre, aunque ahora vivan dentro de AdminBovedaPage.
+        self.vault_sidebar = self.admin_page.vault_sidebar
+        self.folder_label = self.admin_page.folder_label
+        self.process_btn = self.admin_page.process_btn
+        self.save_btn = self.admin_page.save_btn
+        self.open_btn = self.admin_page.open_btn
+        self.open_folder_btn = self.admin_page.open_folder_btn
+        self.progress_bar = self.admin_page.progress_bar
+        self.results_view = self.admin_page.results_view
+        self.log_view = self.admin_page.log_view
+
         self.process_btn.clicked.connect(self.on_process_clicked)
-        self.save_btn = QPushButton("Guardar Excel…")
         self.save_btn.clicked.connect(self.on_save_clicked)
-        self.open_btn = QPushButton("Abrir archivo")
-        self.open_btn.setEnabled(False)
         self.open_btn.clicked.connect(self.on_open_clicked)
-        self.open_folder_btn = QPushButton("Abrir carpeta")
-        self.open_folder_btn.setEnabled(False)
         self.open_folder_btn.clicked.connect(self.on_open_folder_clicked)
-        action_row.addWidget(self.process_btn)
-        action_row.addWidget(self.save_btn)
-        action_row.addWidget(self.open_btn)
-        action_row.addWidget(self.open_folder_btn)
-        layout.addLayout(action_row)
 
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setValue(0)
-        self.progress_bar.setTextVisible(True)
-        layout.addWidget(self.progress_bar)
-
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(line)
-
-        # Visor de resultados (ROADMAP.md Sec.11): tabla del lote actual con
-        # filtro incremental y totales, ANTES de que exista cualquier Excel.
-        layout.addWidget(QLabel("Resultados:"))
-        self.results_view = ResultsView()
-        layout.addWidget(self.results_view, stretch=2)
-
-        layout.addWidget(QLabel("Registro:"))
-        self.log_view = QPlainTextEdit()
-        self.log_view.setReadOnly(True)
-        layout.addWidget(self.log_view, stretch=1)
-
-    # --- Barra lateral de la boveda (flujo primario, B3) ---------------------
-    def _build_sidebar(self):
-        self.vault_source = vault.FolderVaultSource(paths.BOVEDA_XML_DIR)
-        self.vault_sidebar = VaultSidebar(self.vault_source)
         self.vault_sidebar.load_requested.connect(self.on_vault_load)
         self.vault_sidebar.status_message.connect(self.append_log)
         self.vault_sidebar.single_rfc_violation.connect(self.on_single_rfc_violation)
 
-        self.vault_dock = QDockWidget("Bóveda", self)
-        self.vault_dock.setObjectName("vault_dock")
-        self.vault_dock.setWidget(self.vault_sidebar)
-        self.vault_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.vault_dock)
+        self._stack.setCurrentIndex(PAGE_INICIO)
 
     def _build_menu(self):
         menu = self.menuBar()
@@ -163,26 +137,45 @@ class MainWindow(QMainWindow):
         salir = archivo.addAction("Salir")
         salir.triggered.connect(self.close)
 
+        # D40: el menu Ver se elimina por completo (version/licencia iran en
+        # un futuro menu Ayuda). D36: el modulo se abre/cierra desde aqui.
         boveda = menu.addMenu("&Bóveda")
+        self.open_module_action = boveda.addAction("Administrador de Bóveda")
+        self.open_module_action.setShortcut(QKeySequence("Ctrl+B"))
+        self.open_module_action.triggered.connect(self.show_module_page)
+        boveda.addSeparator()
         recargar = boveda.addAction("Recargar bóveda")
         recargar.triggered.connect(self.vault_sidebar.reload)
+        self.move_vault_action = boveda.addAction("Cambiar ubicación de bóveda…")
+        self.move_vault_action.triggered.connect(self.on_move_vault_clicked)
+        boveda.addSeparator()
         self.download_action = boveda.addAction("Descargar del SAT…")
         self.download_action.setEnabled(False)  # F6: CIEC/e.firma (no construido)
 
-        ver = menu.addMenu("&Ver")
-        ver.addAction(self.vault_dock.toggleViewAction())
+    # --- Navegacion entre paginas (D36) ---------------------------------------
+    @Slot()
+    def show_module_page(self):
+        self._stack.setCurrentIndex(PAGE_MODULO)
+
+    @Slot()
+    def show_inicio_page(self):
+        self._stack.setCurrentIndex(PAGE_INICIO)
 
     # --- Maquina de estados --------------------------------------------------
     def _apply_state(self, state: AppState):
         self._state = state
         has_folder = bool(self.input_folder and os.path.isdir(self.input_folder))
         ws = widget_states_for(state, has_folder)
+        # Una mudanza de boveda en curso deshabilita todo lo que toca la
+        # boveda o dispara procesamiento, igual que PROCESSING (D39).
+        moving = self._vault_move_busy
 
-        self.select_action.setEnabled(ws.select_enabled)
-        self.process_btn.setEnabled(ws.process_enabled)
-        self.save_btn.setEnabled(ws.save_enabled)
-        self.save_action.setEnabled(ws.save_enabled)
-        self.vault_sidebar.set_busy(state == AppState.PROCESSING)
+        self.select_action.setEnabled(ws.select_enabled and not moving)
+        self.process_btn.setEnabled(ws.process_enabled and not moving)
+        self.save_btn.setEnabled(ws.save_enabled and not moving)
+        self.save_action.setEnabled(ws.save_enabled and not moving)
+        self.move_vault_action.setEnabled(state != AppState.PROCESSING and not moving)
+        self.vault_sidebar.set_busy(state == AppState.PROCESSING or moving)
 
         if state != AppState.PROCESSING:
             self.progress_bar.setRange(0, 1)
@@ -199,7 +192,7 @@ class MainWindow(QMainWindow):
     # --- Acciones (todas nacen de un clic del usuario) -----------------------
     @Slot()
     def on_select_folder(self):
-        start_dir = self.input_folder or settings.get_last_input_dir() or paths.BOVEDA_XML_DIR
+        start_dir = self.input_folder or settings.get_last_input_dir() or settings.get_vault_root()
         folder = QFileDialog.getExistingDirectory(
             self, "Seleccionar carpeta de XMLs CFDI", start_dir)
         if not folder:
@@ -219,6 +212,9 @@ class MainWindow(QMainWindow):
 
         self.append_log(f"Carpeta seleccionada: {folder}")
         self._apply_state(AppState.READY)
+        # D36: "Abrir carpeta…" tambien navega al modulo - es EL espacio de
+        # trabajo de procesamiento, venga la carga de boveda o de carpeta suelta.
+        self.show_module_page()
 
     @Slot()
     def on_process_clicked(self):
@@ -385,3 +381,79 @@ class MainWindow(QMainWindow):
             core.open_containing_folder(self._last_saved_path)
         except Exception as exc:
             self.append_log(f"No se pudo abrir la carpeta: {exc}")
+
+    # --- Cambiar ubicacion de boveda (D39, clic directo del usuario) ---------
+    @Slot()
+    def on_move_vault_clicked(self):
+        current_root = settings.get_vault_root()
+        dest_parent = QFileDialog.getExistingDirectory(
+            self, "Elegir carpeta destino para la bóveda", current_root)
+        if not dest_parent:
+            return
+
+        try:
+            new_root = vault.validate_vault_move(current_root, dest_parent)
+        except vault.VaultMoveError as exc:
+            QMessageBox.warning(self, "Cambiar ubicación de bóveda", str(exc))
+            return
+
+        rfc_count = len(self.vault_source.rfcs())
+        confirm = QMessageBox.question(
+            self, "Cambiar ubicación de bóveda",
+            f"Se moverá TODA la bóveda ({rfc_count} RFC(s)) de:\n{current_root}\n\n"
+            f"a:\n{new_root}\n\n¿Continuar?")
+        if confirm != QMessageBox.Yes:
+            return
+
+        self._vault_move_busy = True
+        self._apply_state(self._state)
+        self.append_log(f"\nMoviendo bóveda a: {new_root}…")
+
+        # Mismo patron canonico Qt que _start_processing (ROADMAP.md Sec.6.3).
+        self._move_thread = QThread(self)
+        self._move_worker = VaultMoveWorker(current_root, dest_parent)
+        self._move_worker.moveToThread(self._move_thread)
+
+        self._move_thread.started.connect(self._move_worker.run)
+        self._move_worker.log.connect(self.append_log)
+        self._move_worker.progress.connect(self.on_move_progress)
+        self._move_worker.finished.connect(self.on_move_finished)
+        self._move_worker.finished.connect(self._move_thread.quit)
+        self._move_worker.finished.connect(self._move_worker.deleteLater)
+        self._move_worker.failed.connect(self.on_move_failed)
+        self._move_worker.failed.connect(self._move_thread.quit)
+        self._move_worker.failed.connect(self._move_worker.deleteLater)
+        self._move_thread.finished.connect(self._move_thread.deleteLater)
+        self._move_thread.finished.connect(self._on_move_thread_fully_finished)
+
+        self._move_thread.start()
+
+    @Slot(int, int, str)
+    def on_move_progress(self, current, total, name):
+        if total > 0:
+            self.progress_bar.setRange(0, total)
+            self.progress_bar.setValue(current)
+            self.progress_bar.setFormat(f"Moviendo %v / %m  -  {name}")
+
+    @Slot(str)
+    def on_move_finished(self, new_root):
+        """Se ejecuta en el hilo principal. REGLA DE ORO: sin dialogos modales."""
+        settings.set_vault_root(new_root)
+        self.vault_source.root = new_root
+        self._vault_move_busy = False
+        self._apply_state(self._state)
+        self.vault_sidebar.reload()
+        self.append_log(f"\nBóveda movida a: {new_root}")
+
+    @Slot(str)
+    def on_move_failed(self, message):
+        """Se ejecuta en el hilo principal. REGLA DE ORO: sin dialogos modales."""
+        self._vault_move_busy = False
+        self._apply_state(self._state)
+        self.append_log(f"\nERROR moviendo la bóveda: {message}")
+        logger.error("VaultMoveWorker fallo: %s", message)
+
+    @Slot()
+    def _on_move_thread_fully_finished(self):
+        self._move_thread = None
+        self._move_worker = None

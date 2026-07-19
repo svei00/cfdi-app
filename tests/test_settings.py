@@ -99,6 +99,34 @@ class TestMigracionLegado(_IsolatedAppDirTestCase):
         self.assertEqual(settings.get_last_input_dir(), r"C:\Nuevo")
 
 
+class TestVaultRoot(_IsolatedAppDirTestCase):
+    """D39: ruta ACTIVA de la boveda, configurable, con default a paths.py."""
+
+    def test_default_is_paths_boveda_xml_dir(self):
+        self.assertEqual(settings.get_vault_root(), paths.BOVEDA_XML_DIR)
+
+    def test_set_and_get_vault_root(self):
+        new_root = self._tmp.name  # cualquier directorio real sirve
+        settings.set_vault_root(new_root)
+        self.assertEqual(settings.get_vault_root(), new_root)
+
+    def test_invalid_saved_root_falls_back_to_default(self):
+        data = settings.load()
+        data["vault_root"] = os.path.join(self._tmp.name, "no_existe")
+        settings.save(data)
+        self.assertEqual(settings.get_vault_root(), paths.BOVEDA_XML_DIR)
+
+    def test_empty_value_is_ignored(self):
+        settings.set_vault_root(self._tmp.name)
+        settings.set_vault_root("")
+        self.assertEqual(settings.get_vault_root(), self._tmp.name)
+
+    def test_vault_root_does_not_disturb_other_keys(self):
+        settings.set_last_input_dir(r"C:\Entrada")
+        settings.set_vault_root(self._tmp.name)
+        self.assertEqual(settings.get_last_input_dir(), r"C:\Entrada")
+
+
 class TestCorruptedFile(_IsolatedAppDirTestCase):
     def test_corrupted_json_falls_back_to_defaults_without_crashing(self):
         paths.create_initial_directories()

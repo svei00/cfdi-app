@@ -21,6 +21,7 @@ _DEFAULTS = {
     "last_input_dir": "",
     "last_save_dir": "",
     "last_rfc": "",
+    "vault_root": "",
 }
 
 
@@ -100,4 +101,23 @@ def set_last_rfc(rfc):
         return
     data = load()
     data["last_rfc"] = rfc
+    save(data)
+
+
+def get_vault_root():
+    """Ruta ACTIVA de la boveda (D39): la guardada si es un directorio valido,
+    si no el default de paths.py. Unica fuente de verdad de la ruta activa -
+    quien la necesite (main_window, FolderVaultSource) la pide aqui, nunca a
+    paths.BOVEDA_XML_DIR directamente."""
+    saved = load().get("vault_root", "")
+    if saved and os.path.isdir(saved):
+        return saved
+    return paths.BOVEDA_XML_DIR
+
+
+def set_vault_root(vault_root):
+    if not vault_root:
+        return
+    data = load()
+    data["vault_root"] = vault_root
     save(data)

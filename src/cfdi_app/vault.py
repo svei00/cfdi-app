@@ -12,11 +12,33 @@ REGLA DURA (prompt B3 / D21): una CARGA nunca mezcla dos RFCs. La regla se
 hace cumplir AQUI, en el modelo de datos (`build_load_folders` lanza
 `MultipleRfcError`), no solo en la UI. Comparar periodos (años/meses) del MISMO
 RFC si esta permitido.
+
+D37 (B3-R2): `FolderVaultSource.rfcs()` filtra las carpetas de primer nivel
+con un patron de RFC valido - las carpetas basura que a veces aparecen ahi
+("Here", "Master", etc., residuos de otras herramientas o del propio SO)
+dejan de mostrarse como si fueran RFCs.
+
+D39 (B3-R2): la boveda se puede MUDAR de ubicacion completa (nunca por-RFC).
+`validate_vault_move` valida el destino (clic directo del usuario);
+`move_vault` hace el trabajo pesado y esta pensada para correr en un
+QThread aparte (ver ui/vault_move_worker.py), igual que el pipeline de
+procesamiento.
 """
 import os
+import re
+import shutil
 
 # Direcciones canonicas (mismo vocabulario que core.determine_file_naming_components).
 TIPOS = ("Emitidas", "Recibidas")
+
+# RFC de persona moral (3 letras) o fisica (4 letras) + 6 digitos de fecha +
+# 3 caracteres de homoclave. Case-insensitive porque el sistema de archivos
+# puede devolver la carpeta en cualquier capitalizacion.
+RFC_PATTERN = re.compile(r"^[A-ZÑ&]{3,4}[0-9]{6}[A-Z0-9]{3}$", re.IGNORECASE)
+
+
+def is_valid_rfc_folder(name):
+    return bool(RFC_PATTERN.match(name))
 
 
 class MultipleRfcError(Exception):
@@ -74,7 +96,7 @@ class FolderVaultSource(VaultSource):
     def rfcs(self):
         if not self.root or not os.path.isdir(self.root):
             return []
-        return self._subdirs(self.root)
+        return [r for r in self._subdirs(self.root) if is_valid_rfc_folder(r)]
 
     def tipos(self, rfc):
         present = self._subdirs(os.path.join(self.root, rfc))
@@ -135,3 +157,83 @@ def build_load_folders(source, selections):
                 seen.add(key)
                 folders.append(folder)
     return folders
+
+
+class VaultMoveError(Exception):
+    """Destino invalido para mudar la boveda (D39). Mensaje ya listo para
+    mostrar al usuario tal cual - nace de un clic directo, es un dialogo
+    legitimo."""
+
+
+def validate_vault_move(current_root, dest_parent):
+    """Valida un destino para mudar la boveda COMPLETA (D39). No mueve nada -
+    solo valida y devuelve la ruta nueva resultante. Lanza `VaultMoveError`
+    con un mensaje claro si el destino no sirve.
+    """
+    if not dest_parent or not os.path.isdir(dest_parent):
+        raise VaultMoveError("La carpeta destino no existe.")
+
+    current_root = os.path.abspath(current_root)
+    dest_parent = os.path.abspath(dest_parent)
+
+    try:
+        common = os.path.commonpath([dest_parent, current_root])
+    except ValueError:
+        common = None  # discos distintos en Windows: no puede haber anidamiento
+    if common == current_root:
+        raise VaultMoveError(
+            "La carpeta destino no puede estar dentro de la bóveda actual.")
+
+    if not os.access(dest_parent, os.W_OK):
+        raise VaultMoveError(
+            "No hay permisos de escritura en la carpeta destino.")
+
+    new_root = os.path.join(dest_parent, os.path.basename(current_root))
+    if os.path.isdir(new_root) and os.listdir(new_root):
+        raise VaultMoveError(
+            f"El destino ya contiene una carpeta "
+            f"'{os.path.basename(current_root)}' con archivos.")
+
+    return new_root
+
+
+def move_vault(current_root, dest_parent, on_progress=None, on_log=None):
+    """Mueve la carpeta de boveda COMPLETA (current_root) dentro de
+    dest_parent (D39, textual del dueno: "si movemos algo de ubicacion solo
+    se mueve la boveda y TODO lo que tiene dentro" - jamas por-RFC).
+
+    Se mueve subcarpeta de RFC por subcarpeta de RFC (en vez de un solo
+    shutil.move del directorio raiz) para poder reportar progreso real por
+    `on_progress`; tambien significa que si algo falla a medio camino, el
+    log (via `on_log`, ya emitido ANTES de la falla) deja claro que se
+    alcanzo a mover y que no - nada se borra del origen que no se haya
+    movido con exito primero.
+
+    Pensada para correr en un QThread (ver ui/vault_move_worker.py); no
+    importa nada de Qt aqui, sigue el mismo patron que core.process_paths.
+    Devuelve la ruta nueva de la boveda.
+    """
+    new_root = validate_vault_move(current_root, dest_parent)
+    os.makedirs(new_root, exist_ok=True)
+
+    entries = sorted(
+        e for e in os.listdir(current_root)
+        if os.path.isdir(os.path.join(current_root, e)))
+    total = len(entries)
+
+    for i, name in enumerate(entries, start=1):
+        src = os.path.join(current_root, name)
+        dst = os.path.join(new_root, name)
+        shutil.move(src, dst)  # atomico si mismo disco; copia+borra si no
+        if on_log:
+            on_log(f"Movido: {name}")
+        if on_progress:
+            on_progress(i, total, name)
+
+    try:
+        if not os.listdir(current_root):
+            os.rmdir(current_root)
+    except OSError:
+        pass  # la carpeta origen vacia es cosmetica; no vale la pena fallar por esto
+
+    return new_root

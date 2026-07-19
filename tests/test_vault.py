@@ -88,6 +88,27 @@ class TestFolderVaultSourceEnumeration(_VaultTestCase):
         src = vault.FolderVaultSource(self.root)
         self.assertEqual(src.folders_for("NADA", "Emitidas", "2025", "01"), [])
 
+    def test_rfcs_filters_non_rfc_folders(self):
+        """D37: carpetas basura ("Here", "Master") no son RFCs validos."""
+        _make_vault(self.root, {"AAA010101AAA": {"Emitidas": {"2025": ["01"]}}})
+        os.makedirs(os.path.join(self.root, "Here"))
+        os.makedirs(os.path.join(self.root, "Master"))
+        src = vault.FolderVaultSource(self.root)
+        self.assertEqual(src.rfcs(), ["AAA010101AAA"])
+
+    def test_rfcs_accepts_persona_fisica_and_moral(self):
+        _make_vault(self.root, {
+            "AAA010101AAA": {"Emitidas": {"2025": ["01"]}},   # moral: 3+6+3
+            "BBBB020202B22": {"Emitidas": {"2025": ["01"]}},  # fisica: 4+6+3
+        })
+        src = vault.FolderVaultSource(self.root)
+        self.assertEqual(src.rfcs(), ["AAA010101AAA", "BBBB020202B22"])
+
+    def test_rfcs_is_case_insensitive(self):
+        _make_vault(self.root, {"aaa010101aaa": {"Emitidas": {"2025": ["01"]}}})
+        src = vault.FolderVaultSource(self.root)
+        self.assertEqual(src.rfcs(), ["aaa010101aaa"])
+
 
 class TestBuildLoadFolders(_VaultTestCase):
     def setUp(self):

@@ -90,27 +90,56 @@ class TestPopulation(_SidebarTestCase):
         rfcs = [sb._model.item(r).text() for r in range(sb._model.rowCount())]
         self.assertEqual(rfcs, ["AAA010101AAA", "BBB020202BBB"])
 
+    def test_junk_folders_are_not_shown_as_rfcs(self):
+        """D37: filtro RFC vive en vault.py, pero se refleja aqui en el arbol."""
+        _make_vault(self.root, {"AAA010101AAA": {"Emitidas": {"2025": ["01"]}}})
+        os.makedirs(os.path.join(self.root, "Here"))
+        os.makedirs(os.path.join(self.root, "Master"))
+        sb = self._sidebar()
+        rfcs = [sb._model.item(r).text() for r in range(sb._model.rowCount())]
+        self.assertEqual(rfcs, ["AAA010101AAA"])
 
-class TestCheckPropagation(_SidebarTestCase):
+
+class TestProgressiveDisclosure(_SidebarTestCase):
+    """D37 (B3-R2): solo los meses tienen casilla; sin cascada padre<->hijos."""
+
     def setUp(self):
         super().setUp()
         _make_vault(self.root, {"AAA010101AAA": {"Emitidas": {"2025": ["01", "02", "03"]}}})
 
-    def test_checking_year_checks_all_months(self):
+    def test_only_month_items_are_checkable(self):
         sb = self._sidebar()
-        year = self._year_item(sb)
-        year.setCheckState(Qt.Checked)
-        sels = sb.gather_selections()
-        self.assertEqual(sorted(s[3] for s in sels), ["01", "02", "03"])
+        rfc_item = sb._model.item(0)
+        tipo_item = rfc_item.child(0)
+        year_item = tipo_item.child(0)
+        month_item = year_item.child(0)
+        self.assertFalse(rfc_item.isCheckable())
+        self.assertFalse(tipo_item.isCheckable())
+        self.assertFalse(year_item.isCheckable())
+        self.assertTrue(month_item.isCheckable())
 
-    def test_unchecking_one_month_makes_year_partial(self):
+    def test_checking_one_month_does_not_check_siblings(self):
         sb = self._sidebar()
         year = self._year_item(sb)
-        year.setCheckState(Qt.Checked)
-        year.child(0).setCheckState(Qt.Unchecked)
-        self.assertEqual(year.checkState(), Qt.PartiallyChecked)
+        year.child(0).setCheckState(Qt.Checked)
         sels = sb.gather_selections()
-        self.assertEqual(sorted(s[3] for s in sels), ["02", "03"])
+        self.assertEqual(sorted(s[3] for s in sels), ["01"])
+
+    def test_clicking_nav_node_toggles_expansion(self):
+        sb = self._sidebar()
+        rfc_item = sb._model.item(0)
+        index = rfc_item.index()
+        self.assertFalse(sb._tree.isExpanded(index))
+        sb._on_tree_clicked(index)
+        self.assertTrue(sb._tree.isExpanded(index))
+        sb._on_tree_clicked(index)
+        self.assertFalse(sb._tree.isExpanded(index))
+
+    def test_clicking_month_node_does_not_raise(self):
+        sb = self._sidebar()
+        year = self._year_item(sb)
+        month_index = year.child(0).index()
+        sb._on_tree_clicked(month_index)  # no debe lanzar (los meses no expanden)
 
 
 class TestPresets(_SidebarTestCase):
@@ -149,6 +178,81 @@ class TestPresets(_SidebarTestCase):
         self.assertTrue(messages)
         self.assertEqual(sb.gather_selections(), [])
 
+    def test_second_click_on_preset_unchecks_it(self):
+        """D38(a): toggle real - GRAN FALLA reportada por el dueno en B3-R1."""
+        sb = self._sidebar()
+        year = self._year_item(sb)
+        sb._tree.setCurrentIndex(year.index())
+        sb._apply_preset(TRIMESTRES[1])  # marca 01, 02, 03
+        self.assertEqual(len(sb.gather_selections()), 3)
+        sb._apply_preset(TRIMESTRES[1])  # segundo clic: desmarca
+        self.assertEqual(sb.gather_selections(), [])
+
+    def test_preset_button_checked_state_follows_months(self):
+        """D38(b): el boton se marca solo si TODOS los meses del preset lo estan."""
+        sb = self._sidebar()
+        year = self._year_item(sb)
+        sb._tree.setCurrentIndex(year.index())
+        btn = dict((tuple(m), b) for b, m in sb._preset_buttons)[tuple(TRIMESTRES[1])]
+
+        self.assertFalse(btn.isChecked())
+        year.child(0).setCheckState(Qt.Checked)  # solo enero: incompleto
+        self.assertFalse(btn.isChecked())
+        year.child(1).setCheckState(Qt.Checked)
+        year.child(2).setCheckState(Qt.Checked)  # los 3 meses del trimestre
+        self.assertTrue(btn.isChecked())
+        year.child(0).setCheckState(Qt.Unchecked)
+        self.assertFalse(btn.isChecked())
+
+    def test_preset_buttons_reset_on_year_switch(self):
+        """D38(b): el estado visual se recalcula al cambiar de año seleccionado."""
+        _make_vault(self.root, {"AAA010101AAA": {"Emitidas": {
+            "2024": [f"{m:02d}" for m in range(1, 13)],
+        }}})
+        sb = self._sidebar()
+        year_2025 = self._year_item(sb, year_text="2025")
+        sb._tree.setCurrentIndex(year_2025.index())
+        sb._apply_preset(TRIMESTRES[1])
+        btn = dict((tuple(m), b) for b, m in sb._preset_buttons)[tuple(TRIMESTRES[1])]
+        self.assertTrue(btn.isChecked())
+
+        year_2024 = self._year_item(sb, year_text="2024")
+        sb._tree.setCurrentIndex(year_2024.index())
+        self.assertFalse(btn.isChecked())
+
+
+class TestPresetTriggerMethods(_SidebarTestCase):
+    """D38(c): metodos publicos que los QShortcut de AdminBovedaPage invocan."""
+
+    def setUp(self):
+        super().setUp()
+        _make_vault(self.root, {"AAA010101AAA": {
+            "Emitidas": {"2025": [f"{m:02d}" for m in range(1, 13)]}}})
+
+    def test_trigger_bimestre(self):
+        sb = self._sidebar()
+        sb._tree.setCurrentIndex(self._year_item(sb).index())
+        sb.trigger_bimestre(3)
+        self.assertEqual(sorted(s[3] for s in sb.gather_selections()), ["05", "06"])
+
+    def test_trigger_trimestre(self):
+        sb = self._sidebar()
+        sb._tree.setCurrentIndex(self._year_item(sb).index())
+        sb.trigger_trimestre(2)
+        self.assertEqual(sorted(s[3] for s in sb.gather_selections()), ["04", "05", "06"])
+
+    def test_trigger_semestre(self):
+        sb = self._sidebar()
+        sb._tree.setCurrentIndex(self._year_item(sb).index())
+        sb.trigger_semestre(1)
+        self.assertEqual(len(sb.gather_selections()), 6)
+
+    def test_trigger_full_year(self):
+        sb = self._sidebar()
+        sb._tree.setCurrentIndex(self._year_item(sb).index())
+        sb.trigger_full_year()
+        self.assertEqual(len(sb.gather_selections()), 12)
+
 
 class TestLoad(_SidebarTestCase):
     def setUp(self):
@@ -161,7 +265,8 @@ class TestLoad(_SidebarTestCase):
     def test_load_emits_folders_and_persists_rfc(self):
         sb = self._sidebar()
         year = self._year_item(sb, rfc_row=0)
-        year.setCheckState(Qt.Checked)
+        year.child(0).setCheckState(Qt.Checked)  # D37: sin cascada, marcar cada mes
+        year.child(1).setCheckState(Qt.Checked)
         captured = []
         sb.load_requested.connect(captured.append)
         sb.on_load_clicked()
