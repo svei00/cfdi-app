@@ -26,7 +26,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
-    QPushButton, QTreeView, QVBoxLayout, QWidget,
+    QPushButton, QStackedWidget, QTreeView, QVBoxLayout, QWidget,
 )
 
 from cfdi_app import settings, vault
@@ -84,13 +84,26 @@ class VaultSidebar(QWidget):
         header.setStyleSheet("font-weight: bold;")
         layout.addWidget(header)
 
+        # QStackedWidget en vez de un QLabel + QTreeView apilados a mano con
+        # setVisible(): un widget oculto con stretch factor puede seguir
+        # reservando espacio en el layout, dejando un hueco muerto entre el
+        # texto y los presets (feedback real del dueño). El stack alterna
+        # entre la pagina "vacia" (mensaje centrado) y el arbol, sin huecos.
+        self._tree_stack = QStackedWidget()
+
+        empty_page = QWidget()
+        empty_layout = QVBoxLayout(empty_page)
+        empty_layout.addStretch(1)
         self._empty_label = QLabel(
             "No hay RFCs en la bóveda todavía.\n"
             "Usa «Descargar del SAT…» (próximamente) o «Abrir carpeta…» "
             "para XMLs sueltos.")
         self._empty_label.setWordWrap(True)
-        self._empty_label.setStyleSheet("color: gray;")
-        layout.addWidget(self._empty_label)
+        self._empty_label.setAlignment(Qt.AlignHCenter)
+        self._empty_label.setStyleSheet("color: palette(placeholder-text);")
+        empty_layout.addWidget(self._empty_label)
+        empty_layout.addStretch(1)
+        self._tree_stack.addWidget(empty_page)  # indice 0
 
         self._tree = QTreeView()
         self._tree.setModel(self._model)
@@ -104,18 +117,28 @@ class VaultSidebar(QWidget):
         # D38(b): el estado visual de los presets depende del año seleccionado.
         self._tree.selectionModel().currentChanged.connect(
             lambda *_: self._sync_preset_buttons())
-        layout.addWidget(self._tree, stretch=1)
+        self._tree_stack.addWidget(self._tree)  # indice 1
+
+        layout.addWidget(self._tree_stack, stretch=1)
 
         layout.addWidget(self._build_presets_box())
 
         btn_row = QHBoxLayout()
         self.load_btn = QPushButton("Cargar")
         self.load_btn.setToolTip("Procesar los periodos marcados del RFC activo")
+        self.load_btn.setStyleSheet(
+            "QPushButton { padding: 6px 12px; border-radius: 6px; "
+            "background-color: palette(highlight); color: palette(highlighted-text); "
+            "font-weight: 600; }"
+            "QPushButton:disabled { background-color: palette(button); "
+            "color: palette(mid); }")
         self.load_btn.clicked.connect(self.on_load_clicked)
         self.reload_btn = QPushButton("Recargar")
+        self.reload_btn.setStyleSheet("QPushButton { padding: 6px 12px; border-radius: 6px; }")
         self.reload_btn.setToolTip("Volver a leer las carpetas de la bóveda")
         self.reload_btn.clicked.connect(self.reload)
         self.download_btn = QPushButton("Descargar…")
+        self.download_btn.setStyleSheet("QPushButton { padding: 6px 12px; border-radius: 6px; }")
         self.download_btn.setEnabled(False)  # F6: depende de CIEC/e.firma (no construido)
         self.download_btn.setToolTip(
             "Descarga del SAT (CIEC / e.firma) — disponible en una fase futura")
@@ -193,8 +216,7 @@ class VaultSidebar(QWidget):
         self._suppress_item_changed = False
 
         has_rfcs = bool(rfcs)
-        self._empty_label.setVisible(not has_rfcs)
-        self._tree.setVisible(has_rfcs)
+        self._tree_stack.setCurrentIndex(1 if has_rfcs else 0)
 
         # Reabrir en el ultimo RFC usado, si sigue existiendo.
         last = settings.get_last_rfc()

@@ -60,6 +60,9 @@ class AdminBovedaPage(QWidget):
         splitter.addWidget(self._build_work_area())
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
+        # Proporcion inicial sensata (la bóveda no necesita medio ancho de
+        # ventana) - el usuario puede arrastrar el divisor si quiere mas.
+        splitter.setSizes([300, 800])
         outer.addWidget(splitter, stretch=1)
 
     def _build_work_area(self):
