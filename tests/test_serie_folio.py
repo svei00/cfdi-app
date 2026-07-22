@@ -74,10 +74,15 @@ class TestSerieFolio(unittest.TestCase):
         finally:
             os.remove(path)
 
-    def test_serie_and_folio_adjacent_to_factura_in_column_order(self):
-        idx_factura = INVOICE_COLUMN_ORDER.index("Factura")
-        self.assertEqual(INVOICE_COLUMN_ORDER[idx_factura + 1], "Serie")
-        self.assertEqual(INVOICE_COLUMN_ORDER[idx_factura + 2], "Folio")
+    def test_serie_and_folio_are_not_exported_to_excel_by_default(self):
+        """2026-07-19: se retiraron de INVOICE_COLUMN_ORDER - insertarlas junto
+        a "Factura" recorria las columnas posteriores en la plantilla Excel ya
+        existente del dueno. El parser las sigue calculando (arriba); solo
+        dejaron de copiarse al archivo. "Factura" (el campo fusionado) sigue
+        intacto en su posicion original."""
+        self.assertNotIn("Serie", INVOICE_COLUMN_ORDER)
+        self.assertNotIn("Folio", INVOICE_COLUMN_ORDER)
+        self.assertIn("Factura", INVOICE_COLUMN_ORDER)
 
 
 if __name__ == "__main__":

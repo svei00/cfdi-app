@@ -131,15 +131,17 @@ INVOICE_COLUMN_ORDER = [
     "EstadoPago",
     "FechaPago",
     "Factura",            # Merged field: Serie + Folio - NUNCA se quita/mueve (D11)
-    # Task B2 (docs/design-f2.8-combustible-fix-y-ux.md): Serie y Folio por
-    # separado, junto a Factura, para VLOOKUP/INDEX-MATCH contra ERPs donde
-    # partir "A-123" en Excel es ambiguo si la Serie trae guion. Aditivo puro:
-    # Factura sigue igual (parsers arriba). NOTA: aun no aparecen en el visor
-    # (results_view.py) porque el selector real de columnas checkboxes (D18)
-    # esta pendiente de F3 (ROADMAP.md linea ~133) - cuando F3 se construya,
-    # agregar "Serie" y "Folio" ahi, ocultos por default.
-    "Serie",
-    "Folio",
+    # Task B2 (docs/design-f2.8-combustible-fix-y-ux.md) probo agregar "Serie"
+    # y "Folio" como columnas separadas aqui, justo despues de "Factura". El
+    # dueno reporto que eso RECORRE todas las columnas posteriores en su
+    # Excel y rompe formulas por posicion en su plantilla ya existente -
+    # aunque "Factura" en si no cambia. Se retiran de la exportacion por
+    # default (2026-07-19). El parser SIGUE calculando data["Serie"] y
+    # data["Folio"] (xml_parser_40.py) - no se toco esa logica, solo dejaron
+    # de copiarse al Excel. Si F3 (ROADMAP.md linea ~133) alguna vez extiende
+    # su selector de columnas (D18, hoy solo cubre el visor en pantalla) para
+    # tambien controlar QUE se exporta al Excel, agregarlas ahi como opcion
+    # off-by-default - no como un segundo mecanismo de configuracion.
     "UUID",
     "UUID Relacion",
     # Agregado F2.6 (ROADMAP.md Sec.13.2): el codigo crudo del catalogo oficial
