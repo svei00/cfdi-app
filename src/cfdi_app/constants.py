@@ -138,10 +138,15 @@ INVOICE_COLUMN_ORDER = [
     # aunque "Factura" en si no cambia. Se retiran de la exportacion por
     # default (2026-07-19). El parser SIGUE calculando data["Serie"] y
     # data["Folio"] (xml_parser_40.py) - no se toco esa logica, solo dejaron
-    # de copiarse al Excel. Si F3 (ROADMAP.md linea ~133) alguna vez extiende
-    # su selector de columnas (D18, hoy solo cubre el visor en pantalla) para
-    # tambien controlar QUE se exporta al Excel, agregarlas ahi como opcion
-    # off-by-default - no como un segundo mecanismo de configuracion.
+    # de copiarse al Excel.
+    #
+    # F3 las reactivara como OPCION (ROADMAP.md D42): casilla en Settings,
+    # default OFF, y cuando se prenda las columnas se insertan JUSTO AQUI
+    # (junto a "Factura", como estaban) - NO al final de la hoja. Razon: en
+    # el cfdi:Comprobante del XML, Serie y Folio son atributos adyacentes;
+    # dispersarlos rompe el espejo con la fuente. "Factura" nunca se mueve
+    # (D11). No inventar un segundo mecanismo de configuracion: va en el
+    # mismo settings.json y la misma pantalla que D14/D18.
     "UUID",
     "UUID Relacion",
     # Agregado F2.6 (ROADMAP.md Sec.13.2): el codigo crudo del catalogo oficial
