@@ -96,8 +96,8 @@ class VaultSidebar(QWidget):
         empty_layout.addStretch(1)
         self._empty_label = QLabel(
             "No hay RFCs en la bóveda todavía.\n"
-            "Usa «Descargar del SAT…» (próximamente) o «Abrir carpeta…» "
-            "para XMLs sueltos.")
+            "Usa «Descargar del SAT…» (próximamente) o «Abrir XMLs sueltos…» "
+            "(arriba a la derecha).")
         self._empty_label.setWordWrap(True)
         self._empty_label.setAlignment(Qt.AlignHCenter)
         self._empty_label.setStyleSheet("color: palette(placeholder-text);")

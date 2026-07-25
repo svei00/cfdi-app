@@ -49,7 +49,11 @@ class AdminBovedaPage(QWidget):
         self.home_btn = QPushButton("⌂ Inicio")
         self.home_btn.setToolTip("Volver a la carátula")
         header.addWidget(self.home_btn)
-        module_title = QLabel("Administrador de Bóveda")
+        # "Mi Bóveda" en el header/pestaña (corto, D36 ampliacion 2026-07-19:
+        # "Administrador de Bóveda" era largo para un titulo de pagina). El
+        # boton de la caratula que navega aqui SI conserva el nombre largo
+        # descriptivo (inicio_page.py) - solo el titulo dentro del modulo cambia.
+        module_title = QLabel("Mi Bóveda")
         module_title.setStyleSheet("font-weight: bold;")
         header.addWidget(module_title)
         header.addStretch(1)
@@ -73,10 +77,19 @@ class AdminBovedaPage(QWidget):
 
         folder_row = QHBoxLayout()
         self.folder_label = QLabel(
-            "Usa la Bóveda (izquierda) o «Archivo → Abrir carpeta…»")
+            "Usa la Bóveda (izquierda) o «Abrir XMLs sueltos…»")
         self.folder_label.setStyleSheet(
             "padding: 6px; border: 1px solid palette(mid); border-radius: 4px;")
         folder_row.addWidget(self.folder_label, stretch=1)
+        # D11 ampliado 2026-07-19: el flujo ad-hoc (carpeta de XMLs fuera de
+        # la boveda) vivia SOLO en el menu Archivo y el dueño no lo encontraba
+        # - la tabla/arbol de la boveda son "el corazon" de esta pantalla, asi
+        # que el boton para la ruta alterna vive AQUI, junto al path que
+        # describe. El menu Archivo sigue teniendo la accion tambien (D11).
+        self.open_loose_xml_btn = QPushButton("Abrir XMLs sueltos…")
+        self.open_loose_xml_btn.setToolTip(
+            "Procesar una carpeta de XMLs fuera de la bóveda")
+        folder_row.addWidget(self.open_loose_xml_btn)
         layout.addLayout(folder_row)
 
         action_row = QHBoxLayout()

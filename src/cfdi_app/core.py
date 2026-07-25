@@ -388,6 +388,17 @@ def open_file(path):
         subprocess.call([opener, path])
 
 
+def open_folder(path):
+    """Abre el explorador de archivos DIRECTAMENTE en `path` (a diferencia de
+    open_containing_folder, que abre el padre de un ARCHIVO y lo selecciona).
+    Usada por la pagina de Reportes para abrir REPORTS_DIR completa."""
+    if platform.system() == "Windows":
+        os.startfile(path)  # noqa: P204 (API de Windows)
+    else:
+        opener = "open" if platform.system() == "Darwin" else "xdg-open"
+        subprocess.call([opener, path])
+
+
 def open_containing_folder(path):
     """Abre el explorador de archivos en la carpeta que contiene `path`,
     seleccionando el archivo si el sistema operativo lo permite (Windows)."""

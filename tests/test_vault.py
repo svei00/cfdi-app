@@ -159,5 +159,50 @@ class TestBuildLoadFolders(_VaultTestCase):
         self.assertEqual(vault.build_load_folders(self.src, []), [])
 
 
+class TestResolveVaultCandidate(_VaultTestCase):
+    """D41 ampliado 2026-07-19: adivina el nivel correcto de carpeta cuando el
+    usuario no sabe si elegir la carpeta con los RFCs o su carpeta padre."""
+
+    def test_folder_with_rfcs_directly_is_used_as_is(self):
+        _make_vault(self.root, {"AAA010101AAA": {"Emitidas": {"2025": ["01"]}}})
+        resolved, adjusted = vault.resolve_vault_candidate(self.root)
+        self.assertEqual(resolved, os.path.abspath(self.root))
+        self.assertFalse(adjusted)
+
+    def test_parent_of_bovedacfdi_descends_automatically(self):
+        boveda = os.path.join(self.root, "BovedaCFDI")
+        _make_vault(boveda, {"AAA010101AAA": {"Emitidas": {"2025": ["01"]}}})
+        resolved, adjusted = vault.resolve_vault_candidate(self.root)
+        self.assertEqual(resolved, os.path.abspath(boveda))
+        self.assertTrue(adjusted)
+
+    def test_bovedacfdi_detection_is_case_insensitive(self):
+        boveda = os.path.join(self.root, "bovedaCFDI")
+        _make_vault(boveda, {"AAA010101AAA": {"Emitidas": {"2025": ["01"]}}})
+        resolved, adjusted = vault.resolve_vault_candidate(self.root)
+        self.assertEqual(resolved, os.path.abspath(boveda))
+        self.assertTrue(adjusted)
+
+    def test_rfc_folder_chosen_by_mistake_steps_up_to_parent(self):
+        _make_vault(self.root, {"AAA010101AAA": {"Emitidas": {"2025": ["01"]}}})
+        rfc_folder = os.path.join(self.root, "AAA010101AAA")
+        resolved, adjusted = vault.resolve_vault_candidate(rfc_folder)
+        self.assertEqual(resolved, os.path.abspath(self.root))
+        self.assertTrue(adjusted)
+
+    def test_folder_with_nothing_matching_is_returned_unchanged(self):
+        empty = os.path.join(self.root, "vacia")
+        os.makedirs(empty)
+        resolved, adjusted = vault.resolve_vault_candidate(empty)
+        self.assertEqual(resolved, os.path.abspath(empty))
+        self.assertFalse(adjusted)
+
+    def test_missing_folder_does_not_raise(self):
+        missing = os.path.join(self.root, "no_existe")
+        resolved, adjusted = vault.resolve_vault_candidate(missing)
+        self.assertEqual(resolved, os.path.abspath(missing))
+        self.assertFalse(adjusted)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

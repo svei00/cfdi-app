@@ -65,6 +65,7 @@ class InicioPage(QWidget):
     """Carátula: banner clicable + botones de módulo, en una tarjeta centrada."""
 
     open_vault_module = Signal()
+    open_reports_page = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -125,10 +126,16 @@ class InicioPage(QWidget):
             enabled=False, primary=False)
         layout.addWidget(self.download_module_btn)
 
+        # 2026-07-19: ya no es "proximamente" - la app YA genera Excel y el
+        # dueño no tenia forma de llegar a ellos desde la caratula. Activo
+        # ahora; abre una pagina propia (ver ReportesPage) con acceso a la
+        # carpeta de Excel Y el aviso honesto de que el modulo fiscal (F2.8)
+        # sigue pendiente - no se ocultan los reportes que YA existen.
         self.reports_module_btn = self._build_module_button(
             "Reportes",
-            "Próximamente: papeles de trabajo y reportes fiscales.",
-            enabled=False, primary=False)
+            "Abre tus reportes de Excel; papeles de trabajo fiscales próximamente.",
+            enabled=True, primary=False)
+        self.reports_module_btn.clicked.connect(self.open_reports_page.emit)
         layout.addWidget(self.reports_module_btn)
 
         return card

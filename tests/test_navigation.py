@@ -22,7 +22,9 @@ if SRC_DIR not in sys.path:
 from PySide6.QtWidgets import QApplication, QLabel, QMessageBox  # noqa: E402
 
 from cfdi_app import paths, settings  # noqa: E402
-from cfdi_app.ui.main_window import MainWindow, PAGE_INICIO, PAGE_MODULO  # noqa: E402
+from cfdi_app.ui.main_window import (  # noqa: E402
+    MainWindow, PAGE_INICIO, PAGE_MODULO, PAGE_REPORTES,
+)
 
 _app = QApplication.instance() or QApplication([])
 
@@ -63,9 +65,12 @@ class TestModuleButtonsDisabled(_NavigationTestCase):
     def test_vault_module_button_is_enabled(self):
         self.assertTrue(self.window.inicio_page.vault_module_btn.isEnabled())
 
-    def test_download_and_reports_buttons_are_disabled(self):
+    def test_download_button_is_disabled(self):
         self.assertFalse(self.window.inicio_page.download_module_btn.isEnabled())
-        self.assertFalse(self.window.inicio_page.reports_module_btn.isEnabled())
+
+    def test_reports_button_is_enabled(self):
+        # 2026-07-19: dejo de ser "proximamente" - la app YA genera Excel.
+        self.assertTrue(self.window.inicio_page.reports_module_btn.isEnabled())
 
 
 class TestBannerPlaceholder(_NavigationTestCase):
@@ -95,6 +100,86 @@ class TestNavigationFlow(_NavigationTestCase):
         self.assertFalse(hasattr(self.window, "vault_dock"))
         menu_titles = [a.text().replace("&", "") for a in self.window.menuBar().actions()]
         self.assertNotIn("Ver", menu_titles)
+
+
+class TestModuleShortName(_NavigationTestCase):
+    """2026-07-19: "Administrador de Bóveda" era largo para pestaña/titulo -
+    el modulo ahora se llama "Mi Bóveda" ahi; el boton de la caratula que
+    navega al modulo SI conserva el texto largo descriptivo."""
+
+    def test_module_header_says_mi_boveda(self):
+        titles = [w.text() for w in self.window.admin_page.findChildren(QLabel)]
+        self.assertIn("Mi Bóveda", titles)
+
+    def test_menu_action_says_mi_boveda(self):
+        self.assertEqual(self.window.open_module_action.text(), "Mi Bóveda")
+
+    def test_home_page_button_keeps_long_descriptive_label(self):
+        self.assertEqual(
+            self.window.inicio_page.vault_module_btn.text(), "Administrador de Bóveda")
+
+
+class TestLooseXmlButton(_NavigationTestCase):
+    """2026-07-19: el flujo ad-hoc (D11) ahora tambien tiene boton dentro del
+    modulo, junto al path - antes solo vivia en el menu Archivo y el dueño
+    no lo encontraba."""
+
+    def test_button_exists_and_is_enabled_by_default(self):
+        self.assertTrue(self.window.open_loose_xml_btn.isEnabled())
+
+    def test_clicking_button_triggers_same_handler_as_menu_action(self):
+        with patch("cfdi_app.ui.main_window.QFileDialog.getExistingDirectory",
+                    return_value=""):
+            self.window.open_loose_xml_btn.click()  # no debe lanzar
+
+
+class TestReportesPage(_NavigationTestCase):
+    """2026-07-19: "Reportes" dejo de ser un placeholder - abre la carpeta
+    donde ya caen los Excel generados."""
+
+    def test_reports_button_navigates_to_reportes_page(self):
+        self.window.inicio_page.reports_module_btn.click()
+        self.assertEqual(self.window._stack.currentIndex(), PAGE_REPORTES)
+
+    def test_reportes_home_button_returns_to_inicio(self):
+        self.window.show_reportes_page()
+        self.window.reportes_page.home_btn.click()
+        self.assertEqual(self.window._stack.currentIndex(), PAGE_INICIO)
+
+    def test_work_papers_button_stays_disabled(self):
+        self.assertFalse(self.window.reportes_page.work_papers_btn.isEnabled())
+
+    def test_open_folder_button_opens_reports_dir(self):
+        os.makedirs(paths.REPORTS_DIR, exist_ok=True)
+        with patch("cfdi_app.ui.main_window.core.open_folder") as mock_open:
+            self.window.reportes_page.open_folder_btn.click()
+        mock_open.assert_called_once_with(paths.REPORTS_DIR)
+
+    def test_open_folder_creates_missing_reports_dir(self):
+        # MainWindow ya la crea al arrancar (paths.create_initial_directories);
+        # se borra a proposito para probar la defensa del propio handler.
+        os.rmdir(paths.REPORTS_DIR)
+        self.assertFalse(os.path.isdir(paths.REPORTS_DIR))
+        with patch("cfdi_app.ui.main_window.core.open_folder"):
+            self.window.on_open_reports_folder_clicked()
+        self.assertTrue(os.path.isdir(paths.REPORTS_DIR))
+
+    def test_open_folder_failure_is_logged_not_raised(self):
+        with patch("cfdi_app.ui.main_window.core.open_folder",
+                    side_effect=OSError("boom")):
+            self.window.on_open_reports_folder_clicked()  # no debe lanzar
+        self.assertIn("No se pudo abrir", self.window.log_view.toPlainText())
+
+
+class TestVaultHelp(_NavigationTestCase):
+    def test_f1_shows_help_dialog(self):
+        with patch("cfdi_app.ui.main_window.QMessageBox.information") as mock_info:
+            self.window.vault_help_action.trigger()
+        mock_info.assert_called_once()
+        # El texto debe mencionar ambas acciones para que sirva de aclaracion.
+        shown_text = mock_info.call_args[0][2]
+        self.assertIn("Mover bóveda", shown_text)
+        self.assertIn("Usar otra carpeta", shown_text)
 
 
 class TestAdoptVault(_NavigationTestCase):

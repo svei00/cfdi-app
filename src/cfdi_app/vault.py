@@ -237,3 +237,44 @@ def move_vault(current_root, dest_parent, on_progress=None, on_log=None):
         pass  # la carpeta origen vacia es cosmetica; no vale la pena fallar por esto
 
     return new_root
+
+
+def resolve_vault_candidate(path):
+    """Adivina el nivel correcto de carpeta para "usar como boveda" (D41
+    ampliado 2026-07-19: el dueño reporto no saber que nivel elegir en el
+    dialogo). Se prueba, en orden:
+
+    1. `path` YA tiene RFCs directamente adentro -> se usa tal cual.
+    2. `path` contiene una subcarpeta "BovedaCFDI" (cualquier capitalizacion)
+       con RFCs adentro -> se desciende ahi (el usuario eligio el PADRE,
+       p. ej. "C:/AdminXML" en vez de "C:/AdminXML/BovedaCFDI").
+    3. El NOMBRE de `path` hace match con un RFC valido y su carpeta PADRE
+       tiene RFCs -> se sube al padre (el usuario eligio una carpeta de RFC
+       por error, un nivel de mas adentro).
+
+    Si nada aplica, devuelve `path` tal cual (sin RFCs encontrados - el
+    llamador decide si avisar y dejar continuar de todos modos, p. ej. para
+    apuntar a una carpeta vacia a proposito).
+
+    Devuelve `(ruta_resuelta, se_ajusto: bool)`.
+    """
+    path = os.path.abspath(path)
+    if FolderVaultSource(path).rfcs():
+        return path, False
+
+    try:
+        entries = os.listdir(path) if os.path.isdir(path) else []
+    except OSError:
+        entries = []
+    for entry in entries:
+        if entry.lower() == "bovedacfdi":
+            candidate = os.path.join(path, entry)
+            if os.path.isdir(candidate) and FolderVaultSource(candidate).rfcs():
+                return candidate, True
+
+    parent = os.path.dirname(path)
+    if parent and parent != path and is_valid_rfc_folder(os.path.basename(path)):
+        if FolderVaultSource(parent).rfcs():
+            return parent, True
+
+    return path, False

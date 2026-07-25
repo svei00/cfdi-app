@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 from cfdi_app import core, paths, settings, vault
 from cfdi_app.ui.admin_boveda_page import AdminBovedaPage
 from cfdi_app.ui.inicio_page import InicioPage
+from cfdi_app.ui.reportes_page import ReportesPage
 from cfdi_app.ui.state import AppState, widget_states_for
 from cfdi_app.ui.vault_move_worker import VaultMoveWorker
 from cfdi_app.ui.worker import ProcessWorker
@@ -47,6 +48,7 @@ APP_TITLE = "Procesador CFDI"
 
 PAGE_INICIO = 0
 PAGE_MODULO = 1
+PAGE_REPORTES = 2
 
 
 class MainWindow(QMainWindow):
@@ -92,6 +94,7 @@ class MainWindow(QMainWindow):
 
         self.inicio_page = InicioPage()
         self.inicio_page.open_vault_module.connect(self.show_module_page)
+        self.inicio_page.open_reports_page.connect(self.show_reportes_page)
         self._stack.addWidget(self.inicio_page)
 
         # D39: la ruta ACTIVA de la boveda viene de settings, no del default
@@ -101,11 +104,17 @@ class MainWindow(QMainWindow):
         self.admin_page.home_btn.clicked.connect(self.show_inicio_page)
         self._stack.addWidget(self.admin_page)
 
+        self.reportes_page = ReportesPage()
+        self.reportes_page.go_home.connect(self.show_inicio_page)
+        self.reportes_page.open_reports_folder.connect(self.on_open_reports_folder_clicked)
+        self._stack.addWidget(self.reportes_page)
+
         # Alias para que el resto de la clase (logica preexistente, sin
         # cambios de comportamiento) siga hablando de estos widgets por su
         # nombre de siempre, aunque ahora vivan dentro de AdminBovedaPage.
         self.vault_sidebar = self.admin_page.vault_sidebar
         self.folder_label = self.admin_page.folder_label
+        self.open_loose_xml_btn = self.admin_page.open_loose_xml_btn
         self.process_btn = self.admin_page.process_btn
         self.save_btn = self.admin_page.save_btn
         self.open_btn = self.admin_page.open_btn
@@ -114,6 +123,7 @@ class MainWindow(QMainWindow):
         self.results_view = self.admin_page.results_view
         self.log_view = self.admin_page.log_view
 
+        self.open_loose_xml_btn.clicked.connect(self.on_select_folder)
         self.process_btn.clicked.connect(self.on_process_clicked)
         self.save_btn.clicked.connect(self.on_save_clicked)
         self.open_btn.clicked.connect(self.on_open_clicked)
@@ -128,11 +138,13 @@ class MainWindow(QMainWindow):
     def _build_menu(self):
         menu = self.menuBar()
 
+        # "Guardar Excel…" se retira de este menu (2026-07-19): duplicaba,
+        # con otro texto, el boton que ya esta pegado a "Procesar" en el
+        # modulo - un menu no debe repetir un boton siempre visible (feedback
+        # real: "no tiene mucho sentido... tienes los botones justo arriba").
         archivo = menu.addMenu("&Archivo")
-        self.select_action = archivo.addAction("Abrir carpeta de XMLs sueltos…")
+        self.select_action = archivo.addAction("Abrir XMLs sueltos…")
         self.select_action.triggered.connect(self.on_select_folder)
-        self.save_action = archivo.addAction("Guardar Excel…")
-        self.save_action.triggered.connect(self.on_save_clicked)
         archivo.addSeparator()
         salir = archivo.addAction("Salir")
         salir.triggered.connect(self.close)
@@ -140,7 +152,7 @@ class MainWindow(QMainWindow):
         # D40: el menu Ver se elimina por completo (version/licencia iran en
         # un futuro menu Ayuda). D36: el modulo se abre/cierra desde aqui.
         boveda = menu.addMenu("&Bóveda")
-        self.open_module_action = boveda.addAction("Administrador de Bóveda")
+        self.open_module_action = boveda.addAction("Mi Bóveda")
         self.open_module_action.setShortcut(QKeySequence("Ctrl+B"))
         self.open_module_action.triggered.connect(self.show_module_page)
         boveda.addSeparator()
@@ -164,6 +176,31 @@ class MainWindow(QMainWindow):
         self.download_action = boveda.addAction("Descargar del SAT…")
         self.download_action.setEnabled(False)  # F6: CIEC/e.firma (no construido)
 
+        # D40 preveia este menu para version/licencia; se adelanta un poco
+        # (2026-07-19) porque "mover" vs "usar otra carpeta" resulto confuso
+        # en la practica (feedback real) y merece una explicacion a un clic.
+        ayuda = menu.addMenu("A&yuda")
+        self.vault_help_action = ayuda.addAction("Mover vs. usar otra carpeta…")
+        self.vault_help_action.setShortcut(QKeySequence("F1"))
+        self.vault_help_action.triggered.connect(self.on_vault_help_clicked)
+
+    @Slot()
+    def on_vault_help_clicked(self):
+        """Clic directo (F1 o menu) - dialogo informativo legitimo."""
+        QMessageBox.information(
+            self, "Mover vs. usar otra carpeta",
+            "Tu bóveda vive en UNA ubicación a la vez. Hay dos formas de "
+            "cambiarla, y hacen cosas distintas:\n\n"
+            "• Mover bóveda a otra carpeta…\n"
+            "Reubica físicamente tus archivos actuales a una carpeta nueva. "
+            "Solo funciona si el destino está vacío - si ya tuviera datos, "
+            "la app se niega a continuar (nunca mezcla).\n\n"
+            "• Usar otra carpeta como bóveda…\n"
+            "NO mueve nada. Apunta la app a una carpeta que YA tiene tus "
+            "RFCs (por ejemplo, una bóveda armada con otra herramienta). "
+            "Elige la carpeta que contiene las carpetas de RFC, o su carpeta "
+            "padre - la app detecta el nivel correcto automáticamente.")
+
     # --- Navegacion entre paginas (D36) ---------------------------------------
     @Slot()
     def show_module_page(self):
@@ -172,6 +209,19 @@ class MainWindow(QMainWindow):
     @Slot()
     def show_inicio_page(self):
         self._stack.setCurrentIndex(PAGE_INICIO)
+
+    @Slot()
+    def show_reportes_page(self):
+        self._stack.setCurrentIndex(PAGE_REPORTES)
+
+    @Slot()
+    def on_open_reports_folder_clicked(self):
+        """Clic directo del usuario (dialogo/accion del SO, legitimo)."""
+        try:
+            os.makedirs(paths.REPORTS_DIR, exist_ok=True)
+            core.open_folder(paths.REPORTS_DIR)
+        except Exception as exc:
+            self.append_log(f"No se pudo abrir la carpeta de reportes: {exc}")
 
     # --- Maquina de estados --------------------------------------------------
     def _apply_state(self, state: AppState):
@@ -183,9 +233,9 @@ class MainWindow(QMainWindow):
         moving = self._vault_move_busy
 
         self.select_action.setEnabled(ws.select_enabled and not moving)
+        self.open_loose_xml_btn.setEnabled(ws.select_enabled and not moving)
         self.process_btn.setEnabled(ws.process_enabled and not moving)
         self.save_btn.setEnabled(ws.save_enabled and not moving)
-        self.save_action.setEnabled(ws.save_enabled and not moving)
         self.move_vault_action.setEnabled(state != AppState.PROCESSING and not moving)
         self.adopt_vault_action.setEnabled(state != AppState.PROCESSING and not moving)
         self.vault_sidebar.set_busy(state == AppState.PROCESSING or moving)
@@ -413,11 +463,18 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Mover bóveda a otra carpeta", str(exc))
             return
 
+        # D41 ampliado 2026-07-19: el dueño temia que "mover" pudiera MEZCLAR
+        # su boveda con datos reales ya existentes en el destino. Ya es
+        # imposible - validate_vault_move (arriba) rechaza la mudanza si el
+        # destino ya tiene una BovedaCFDI con contenido - pero el aviso debe
+        # DECIRLO explicitamente, no solo serlo por debajo.
         rfc_count = len(self.vault_source.rfcs())
         confirm = QMessageBox.question(
             self, "Mover bóveda a otra carpeta",
             f"Se moverá TODA la bóveda ({rfc_count} RFC(s)) de:\n{current_root}\n\n"
-            f"a:\n{new_root}\n\n¿Continuar?")
+            f"a:\n{new_root}\n\n"
+            "Es seguro: si el destino ya tuviera datos, la app se hubiera "
+            "negado a continuar (nunca mezcla). ¿Continuar?")
         if confirm != QMessageBox.Yes:
             return
 
@@ -485,11 +542,18 @@ class MainWindow(QMainWindow):
         que se muevan (feedback real, D39 solo cubria mudanza fisica)."""
         current_root = settings.get_vault_root()
         chosen = QFileDialog.getExistingDirectory(
-            self, "Elegir carpeta existente para usar como bóveda", current_root)
+            self, "Elegir la carpeta que contiene tus RFCs (o su carpeta padre)",
+            current_root)
         if not chosen:
             return
 
-        chosen = os.path.abspath(chosen)
+        # D41 ampliado 2026-07-19: el dueño no sabia que NIVEL de carpeta
+        # elegir (la que tiene los RFCs adentro, o su padre). Se adivina
+        # automaticamente en vez de exigir precision del usuario.
+        chosen, adjusted = vault.resolve_vault_candidate(chosen)
+        if adjusted:
+            self.append_log(f"Ajustada automáticamente a: {chosen}")
+
         if os.path.normcase(chosen) == os.path.normcase(os.path.abspath(current_root)):
             self.append_log("Esa carpeta ya es la bóveda activa.")
             return
