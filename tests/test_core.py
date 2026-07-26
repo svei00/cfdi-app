@@ -112,6 +112,74 @@ class TestProcessPathErrorsPerFile(unittest.TestCase):
             self.assertIn("zip", reason.lower())
 
 
+class TestBuildFilteredFilename(unittest.TestCase):
+    """F2.7 (ROADMAP.md D29/§16.4/§16.6): sufijo derivado del query activo."""
+
+    def setUp(self):
+        self.result = core.process_path(FIXTURE_DIR)
+        self.parsed = self.result.all_parsed_data
+        self.base = core.build_default_filename(self.parsed)
+
+    def test_single_text_query_produces_readable_suffix(self):
+        # Criterio de aceptacion 1 (§16.6).
+        name = core.build_filtered_filename(self.parsed, ["tela"])
+        self.assertEqual(name, self.base.replace(".xlsx", "_Filtrado_tela.xlsx"))
+
+    def test_less_than_operator_translates_to_word(self):
+        # Criterio de aceptacion 2 (§16.6).
+        name = core.build_filtered_filename(self.parsed, ["<2000"])
+        self.assertEqual(name, self.base.replace(".xlsx", "_Filtrado_menor2000.xlsx"))
+
+    def test_operator_after_field_name_translates_correctly(self):
+        # Criterio de aceptacion 2 (§16.6), variante con nombre de campo.
+        name = core.build_filtered_filename(self.parsed, ["total>=5000"])
+        self.assertEqual(name, self.base.replace(".xlsx", "_Filtrado_totaldesde5000.xlsx"))
+
+    def test_less_equal_and_greater_operators_translate(self):
+        self.assertTrue(
+            core.build_filtered_filename(self.parsed, ["<=100"])
+            .endswith("_Filtrado_hasta100.xlsx"))
+        self.assertTrue(
+            core.build_filtered_filename(self.parsed, [">100"])
+            .endswith("_Filtrado_mayor100.xlsx"))
+
+    def test_two_active_tabs_use_generic_suffix(self):
+        # Criterio de aceptacion 3 (§16.6).
+        name = core.build_filtered_filename(self.parsed, ["tela", "PUE"])
+        self.assertEqual(name, self.base.replace(".xlsx", "_Filtrado.xlsx"))
+
+    def test_spaces_become_underscores(self):
+        name = core.build_filtered_filename(self.parsed, ["venta de tela"])
+        self.assertIn("_Filtrado_venta_de_tela.xlsx", name)
+
+    def test_suffix_is_truncated_to_thirty_chars(self):
+        long_query = "a" * 50
+        name = core.build_filtered_filename(self.parsed, [long_query])
+        suffix = name.rsplit("_Filtrado_", 1)[1].replace(".xlsx", "")
+        self.assertEqual(len(suffix), 30)
+
+    def test_query_that_sanitizes_to_empty_falls_back_to_generic(self):
+        name = core.build_filtered_filename(self.parsed, ["!!!"])
+        self.assertEqual(name, self.base.replace(".xlsx", "_Filtrado.xlsx"))
+
+    def test_base_name_unchanged_by_filtering(self):
+        # §16.4: RFC/tipo/fecha NO cambian por filtrar - mismo stem base.
+        name = core.build_filtered_filename(self.parsed, ["tela"])
+        self.assertTrue(name.startswith(self.base.replace(".xlsx", "")))
+
+
+class TestExportReportFiltered(unittest.TestCase):
+    def test_writes_only_the_filtered_rows_passed_in(self):
+        import pandas as pd
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = os.path.join(tmp_dir, "filtrado.xlsx")
+            core.export_report_filtered(
+                [{"RFC Emisor": "AAA010101AAA", "Factura": "1"}], [], [], output_path)
+            self.assertTrue(os.path.exists(output_path))
+            df = pd.read_excel(output_path, sheet_name="Invoices")
+            self.assertEqual(len(df), 1)
+
+
 class TestProcessPaths(unittest.TestCase):
     """process_paths (Task B3): mismo motor que process_path pero sobre varias
     carpetas, con deduplicacion a nivel de archivo."""

@@ -8,7 +8,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QLineEdit, QMenu, QTableView, QTabWidget,
@@ -248,6 +248,12 @@ class _ResultsTabPanel(QWidget):
 class ResultsView(QTabWidget):
     """Visor de resultados: una pestaña por tipo de documento (D13/D15)."""
 
+    # F2.7 (D29/§16): cualquier caja de busqueda de cualquier pestaña cambio -
+    # MainWindow lo usa para habilitar/deshabilitar "Guardar filtrado…" en
+    # vivo, sin pasar por la maquina de estados AppState (que no sabe de
+    # filtros de texto).
+    filter_changed = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(_DARK_TABLE_STYLESHEET)
@@ -256,6 +262,9 @@ class ResultsView(QTabWidget):
             panel = _ResultsTabPanel(config)
             self._panels[config.key] = panel
             self.addTab(panel, config.title)
+            # textChanged manda el texto nuevo (str); filter_changed no toma
+            # argumentos - una lambda descarta el str en vez de reenviarlo.
+            panel.search_box.textChanged.connect(lambda _text: self.filter_changed.emit())
 
     def set_result(self, result):
         """Puebla las 3 pestañas a partir de un core.ProcessResult (o None para vaciar)."""
@@ -265,3 +274,32 @@ class ResultsView(QTabWidget):
 
     def clear(self):
         self.set_result(None)
+
+    # --- F2.7: exportacion filtrada "espejo del visor" (D29/§16) -------------
+    def has_any_active_filter(self):
+        """True si AL MENOS una pestaña tiene texto de busqueda activo."""
+        return any(p.search_box.text().strip() for p in self._panels.values())
+
+    def active_filter_info(self):
+        """Lista de (config.key, query) SOLO para pestañas con filtro activo -
+        usada para decidir el sufijo del nombre de archivo (§16.4: sufijo
+        legible con UNA pestaña filtrada, generico con varias)."""
+        return [
+            (p.config.key, p.search_box.text().strip())
+            for p in self._panels.values() if p.search_box.text().strip()
+        ]
+
+    def filtered_data(self):
+        """dict {config.key: registros} - cada pestaña filtrada con SU PROPIO
+        query via la MISMA filtering.filter_records() que usa el proxy de la
+        tabla (results_proxy.py llama matches_search con los mismos
+        parametros), garantizando que exportado == visible (§16.5). Una
+        pestaña sin filtro activo devuelve su lista COMPLETA (filter_records
+        con query vacio no descarta nada) - asi que llamar esto SIEMPRE,
+        filtro activo o no, ya produce el "espejo" pedido en §16.2."""
+        return {
+            p.config.key: filtering.filter_records(
+                p._records, p.search_box.text(), p.config.text_fields,
+                p.config.amount_fields, p.config.default_amount_field)
+            for p in self._panels.values()
+        }

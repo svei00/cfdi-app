@@ -95,12 +95,21 @@ class AdminBovedaPage(QWidget):
         action_row = QHBoxLayout()
         self.process_btn = QPushButton("Procesar")
         self.save_btn = QPushButton("Guardar Excel…")
+        # F2.7 (D29/§16.3): boton NUEVO y SEPARADO - "Guardar Excel…" jamas
+        # cambia de significado segun estado invisible (la clase de sorpresa
+        # que este proyecto evita desde el Bug 1). Habilitado solo cuando hay
+        # resultado Y al menos una pestaña tiene filtro activo (main_window.py).
+        self.save_filtered_btn = QPushButton("Guardar filtrado…")
+        self.save_filtered_btn.setToolTip(
+            "Exporta cada pestaña según su propio filtro de búsqueda activo")
+        self.save_filtered_btn.setEnabled(False)
         self.open_btn = QPushButton("Abrir archivo")
         self.open_btn.setEnabled(False)
         self.open_folder_btn = QPushButton("Abrir carpeta")
         self.open_folder_btn.setEnabled(False)
         action_row.addWidget(self.process_btn)
         action_row.addWidget(self.save_btn)
+        action_row.addWidget(self.save_filtered_btn)
         action_row.addWidget(self.open_btn)
         action_row.addWidget(self.open_folder_btn)
         layout.addLayout(action_row)

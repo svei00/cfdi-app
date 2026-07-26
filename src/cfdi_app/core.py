@@ -10,6 +10,7 @@
 import logging
 import os
 import platform
+import re
 import subprocess
 import zipfile
 import tempfile
@@ -377,6 +378,64 @@ def export_report(result, output_path):
     """
     export_to_excel(result.invoice_data, result.nomina_data,
                     result.pagos_data, output_path)
+
+
+def export_report_filtered(invoice_data, nomina_data, pagos_data, output_path):
+    """Igual que export_report, pero recibe listas YA filtradas por el
+    llamador (F2.7, ROADMAP.md D29/§16) en vez de un ProcessResult completo -
+    cada hoja del Excel sale segun SU PROPIO filtro de pestaña. La funcion de
+    export no sabe ni le importa que hubo un filtro: es la MISMA
+    export_to_excel de siempre, solo con listas mas cortas."""
+    export_to_excel(invoice_data, nomina_data, pagos_data, output_path)
+
+
+# Traduccion de operadores ANTES de sanitizar (D29/§16.4): un query como
+# "total>=5000" no debe perder el operador al filtrar caracteres no
+# alfanumericos - se traduce a palabra primero. Orden IMPORTA: "<=" y ">="
+# deben probarse antes que "<" y ">" solos, o el resto ("=") quedaria huerfano.
+_FILTER_OPERATOR_WORDS = [
+    ("<=", "hasta"),
+    (">=", "desde"),
+    ("<", "menor"),
+    (">", "mayor"),
+]
+_FILTER_SUFFIX_JUNK_RE = re.compile(r"[^A-Za-z0-9_-]+")
+_FILTER_SUFFIX_MAX_LEN = 30
+
+
+def _sanitize_filter_suffix(query):
+    """Convierte un query de busqueda del visor en un sufijo de archivo
+    seguro (D29/§16.4). Devuelve None si no queda nada usable (el llamador
+    cae al sufijo generico "_Filtrado")."""
+    text = query.strip()
+    for symbol, word in _FILTER_OPERATOR_WORDS:
+        text = text.replace(symbol, word)
+    text = text.replace(" ", "_")
+    text = _FILTER_SUFFIX_JUNK_RE.sub("", text)
+    text = text[:_FILTER_SUFFIX_MAX_LEN]
+    return text or None
+
+
+def build_filtered_filename(parsed_data_list, active_queries):
+    """Nombre del Excel filtrado (D29/§16.4): mismo nombre base que el export
+    completo (RFC/tipo/fecha NO cambian por filtrar) + sufijo derivado.
+
+    `active_queries` es la lista de queries (str) de las pestañas con filtro
+    activo en ESE momento. Con exactamente UNA pestaña filtrada se deriva un
+    sufijo legible del query (p. ej. "_Filtrado_tela",
+    "_Filtrado_menor2000"); con varias a la vez, o si el query sanitizado
+    queda vacio, se usa el sufijo generico "_Filtrado".
+    """
+    base_name = build_default_filename(parsed_data_list)
+    stem, ext = os.path.splitext(base_name)
+
+    suffix = None
+    if len(active_queries) == 1:
+        suffix = _sanitize_filter_suffix(active_queries[0])
+
+    if suffix:
+        return f"{stem}_Filtrado_{suffix}{ext}"
+    return f"{stem}_Filtrado{ext}"
 
 
 def open_file(path):

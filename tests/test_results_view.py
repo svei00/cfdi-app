@@ -135,5 +135,63 @@ class TestResultsView(unittest.TestCase):
         self.assertLess(invoice_panel.proxy.rowCount(), len(self.result.invoice_data))
 
 
+class TestResultsViewFilteredExport(unittest.TestCase):
+    """F2.7 (ROADMAP.md D29/§16): exportacion filtrada "espejo del visor"."""
+
+    def setUp(self):
+        self.result = core.process_path(FIXTURE_DIR)
+        self.view = ResultsView()
+        self.view.set_result(self.result)
+
+    def test_no_active_filter_reports_false(self):
+        self.assertFalse(self.view.has_any_active_filter())
+        self.assertEqual(self.view.active_filter_info(), [])
+
+    def test_typing_in_one_tab_is_detected_as_active(self):
+        self.view._panels["invoice_data"].search_box.setText("pintura")
+        self.assertTrue(self.view.has_any_active_filter())
+        self.assertEqual(self.view.active_filter_info(), [("invoice_data", "pintura")])
+
+    def test_whitespace_only_query_does_not_count_as_active(self):
+        self.view._panels["invoice_data"].search_box.setText("   ")
+        self.assertFalse(self.view.has_any_active_filter())
+
+    def test_filter_changed_signal_emits_on_text_change(self):
+        received = []
+        self.view.filter_changed.connect(lambda: received.append(True))
+        self.view._panels["invoice_data"].search_box.setText("pintura")
+        self.assertTrue(received)
+
+    def test_filtered_tab_is_trimmed_unfiltered_tabs_stay_complete(self):
+        # §16.2: cada hoja segun SU PROPIO filtro - Facturas recortada,
+        # Nomina/Pagos completas al no tener filtro activo.
+        self.view._panels["invoice_data"].search_box.setText("pintura")
+        data = self.view.filtered_data()
+        self.assertLess(len(data["invoice_data"]), len(self.result.invoice_data))
+        self.assertEqual(len(data["nomina_data"]), len(self.result.nomina_data))
+        self.assertEqual(len(data["pagos_data"]), len(self.result.pagos_data))
+
+    def test_exported_rows_are_identical_to_what_the_proxy_shows(self):
+        # §16.5, criterio duro: exportado == visible, misma cantidad y
+        # mismos registros (no solo el conteo).
+        invoice_panel = self.view._panels["invoice_data"]
+        invoice_panel.search_box.setText("pintura")
+
+        visible_via_proxy = [
+            invoice_panel.model.record_at(invoice_panel.proxy.mapToSource(
+                invoice_panel.proxy.index(row, 0)).row())
+            for row in range(invoice_panel.proxy.rowCount())
+        ]
+        exported = self.view.filtered_data()["invoice_data"]
+
+        self.assertEqual(len(exported), len(visible_via_proxy))
+        self.assertCountEqual(exported, visible_via_proxy)
+
+    def test_no_filter_active_export_matches_full_dataset(self):
+        # Degradacion natural (§16.2): sin filtro, exportado == completo.
+        data = self.view.filtered_data()
+        self.assertEqual(data["invoice_data"], self.result.invoice_data)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

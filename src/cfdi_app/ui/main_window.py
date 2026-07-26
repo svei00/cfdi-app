@@ -117,6 +117,7 @@ class MainWindow(QMainWindow):
         self.open_loose_xml_btn = self.admin_page.open_loose_xml_btn
         self.process_btn = self.admin_page.process_btn
         self.save_btn = self.admin_page.save_btn
+        self.save_filtered_btn = self.admin_page.save_filtered_btn
         self.open_btn = self.admin_page.open_btn
         self.open_folder_btn = self.admin_page.open_folder_btn
         self.progress_bar = self.admin_page.progress_bar
@@ -126,8 +127,12 @@ class MainWindow(QMainWindow):
         self.open_loose_xml_btn.clicked.connect(self.on_select_folder)
         self.process_btn.clicked.connect(self.on_process_clicked)
         self.save_btn.clicked.connect(self.on_save_clicked)
+        self.save_filtered_btn.clicked.connect(self.on_save_filtered_clicked)
         self.open_btn.clicked.connect(self.on_open_clicked)
         self.open_folder_btn.clicked.connect(self.on_open_folder_clicked)
+        # F2.7: el filtro de texto no es parte de AppState (§16.3) - se
+        # recalcula aparte, en vivo, cada vez que cambia alguna caja de busqueda.
+        self.results_view.filter_changed.connect(self._update_save_filtered_enabled)
 
         self.vault_sidebar.load_requested.connect(self.on_vault_load)
         self.vault_sidebar.status_message.connect(self.append_log)
@@ -247,6 +252,21 @@ class MainWindow(QMainWindow):
         else:
             self.progress_bar.setRange(0, 0)  # indeterminada hasta el primer avance real
             self.progress_bar.setFormat("Procesando…")
+
+        self._update_save_filtered_enabled()
+
+    @Slot()
+    def _update_save_filtered_enabled(self):
+        """F2.7 (D29/§16.3): "Guardar filtrado…" se habilita SOLO con estado
+        DONE y al menos una pestaña con filtro activo. El filtro de texto no
+        es parte de AppState, asi que esto se recalcula aparte - tanto desde
+        _apply_state (cambios de estado) como desde ResultsView.filter_changed
+        (el usuario escribe/borra en una caja de busqueda sin que el estado
+        cambie)."""
+        self.save_filtered_btn.setEnabled(
+            self._state == AppState.DONE
+            and not self._vault_move_busy
+            and self.results_view.has_any_active_filter())
 
     # --- Helpers de UI -------------------------------------------------------
     def append_log(self, message):
@@ -424,6 +444,54 @@ class MainWindow(QMainWindow):
         self._last_saved_path = output_path
         settings.set_last_save_dir(os.path.dirname(output_path))
         self.append_log(f"\nExcel guardado en: {output_path}")
+        self.open_btn.setEnabled(True)
+        self.open_folder_btn.setEnabled(True)
+
+    # --- Exportacion filtrada "espejo del visor" (F2.7, D29/§16) -------------
+    @Slot()
+    def on_save_filtered_clicked(self):
+        """Cada hoja sale segun SU PROPIO filtro de pestaña (§16.2): pestañas
+        con filtro activo salen recortadas, sin filtro salen COMPLETAS. El
+        boton "Guardar Excel…" (on_save_clicked) NO cambia - este es un
+        camino separado a proposito (§16.3)."""
+        if self._state != AppState.DONE or self._last_result is None:
+            return
+        if not self.results_view.has_any_active_filter():
+            return  # boton deberia estar deshabilitado; defensivo nomas
+
+        active = self.results_view.active_filter_info()
+        default_name = core.build_filtered_filename(
+            self._last_result.all_parsed_data, [query for _, query in active])
+        default_dir = settings.get_last_save_dir() or paths.REPORTS_DIR
+        default_path = os.path.join(default_dir, default_name)
+        output_path, _ = QFileDialog.getSaveFileName(
+            self, "Guardar Excel filtrado", default_path,
+            "Archivos de Excel (*.xlsx)")
+
+        if not output_path:
+            self.append_log("Exportacion filtrada cancelada por el usuario.")
+            return
+
+        filtered = self.results_view.filtered_data()
+        try:
+            core.export_report_filtered(
+                filtered.get("invoice_data", []), filtered.get("nomina_data", []),
+                filtered.get("pagos_data", []), output_path)
+        except PermissionError:
+            QMessageBox.critical(
+                self, APP_TITLE,
+                "No se pudo guardar el Excel: el archivo esta abierto en otro "
+                "programa (por ejemplo Excel). Cierralo e intenta de nuevo.")
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, APP_TITLE, f"Error al exportar el Excel:\n{exc}")
+            return
+
+        # Igual que on_save_clicked (§16.3): "Abrir archivo"/"Abrir carpeta"
+        # apuntan al ultimo archivo guardado, sea filtrado o completo.
+        self._last_saved_path = output_path
+        settings.set_last_save_dir(os.path.dirname(output_path))
+        self.append_log(f"\nExcel filtrado guardado en: {output_path}")
         self.open_btn.setEnabled(True)
         self.open_folder_btn.setEnabled(True)
 
