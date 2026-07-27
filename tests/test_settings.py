@@ -82,6 +82,25 @@ class TestSetGet(_IsolatedAppDirTestCase):
         self.assertTrue(os.path.exists(os.path.join(paths.BASE_APP_DIR, "settings.json")))
 
 
+class TestPapelTrabajoGate(_IsolatedAppDirTestCase):
+    """Gate F2.8 (D30/§17.6): default ON (Pro); conmutable a Lite."""
+
+    def test_default_is_enabled(self):
+        self.assertTrue(settings.get_papel_trabajo_enabled())
+
+    def test_can_disable_and_reenable(self):
+        settings.set_papel_trabajo_enabled(False)
+        self.assertFalse(settings.get_papel_trabajo_enabled())
+        settings.set_papel_trabajo_enabled(True)
+        self.assertTrue(settings.get_papel_trabajo_enabled())
+
+    def test_gate_does_not_disturb_other_keys(self):
+        settings.set_last_input_dir(r"C:\Entrada")
+        settings.set_papel_trabajo_enabled(False)
+        self.assertEqual(settings.get_last_input_dir(), r"C:\Entrada")
+        self.assertFalse(settings.get_papel_trabajo_enabled())
+
+
 class TestMigracionLegado(_IsolatedAppDirTestCase):
     def test_migrates_legacy_txt_into_last_input_dir(self):
         os.makedirs(paths.REPORTS_DIR, exist_ok=True)

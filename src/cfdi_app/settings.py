@@ -22,6 +22,11 @@ _DEFAULTS = {
     "last_save_dir": "",
     "last_rfc": "",
     "vault_root": "",
+    # Gate de edicion provisional (F2.8, D30/§17.6). Default = TODO habilitado:
+    # pruebas y beta ven las hojas de Papel de Trabajo. En F9, editions.py
+    # sustituye esta bandera sin mover la logica del reporte. Cero validacion
+    # de licencias antes de F9. True = edicion Pro (con hojas PT); False = Lite.
+    "papel_trabajo": True,
 }
 
 
@@ -120,4 +125,17 @@ def set_vault_root(vault_root):
         return
     data = load()
     data["vault_root"] = vault_root
+    save(data)
+
+
+def get_papel_trabajo_enabled():
+    """Gate F2.8 (D30/§17.6): ¿el Excel incluye las hojas de Papel de Trabajo?
+    Default True (edicion Pro). El valor puede no ser bool si el settings.json
+    fue editado a mano - se normaliza con bool()."""
+    return bool(load().get("papel_trabajo", True))
+
+
+def set_papel_trabajo_enabled(enabled):
+    data = load()
+    data["papel_trabajo"] = bool(enabled)
     save(data)

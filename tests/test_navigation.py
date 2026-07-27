@@ -236,5 +236,25 @@ class TestAdoptVault(_NavigationTestCase):
         self.assertEqual(settings.get_vault_root(), empty_folder)
 
 
+class TestMultipleTiposViolation(_NavigationTestCase):
+    """Bug real 2026-07-25 (D21): mezclar Emitidas y Recibidas en una carga
+    debe avisar, igual que mezclar RFCs - cableado extremo a extremo desde
+    la señal de vault_sidebar hasta el QMessageBox de la ventana."""
+
+    def test_signal_triggers_warning_dialog(self):
+        with patch("cfdi_app.ui.main_window.QMessageBox.warning") as mock_warn:
+            self.window.on_multiple_tipos_violation(["Emitidas", "Recibidas"])
+        mock_warn.assert_called_once()
+        shown_text = mock_warn.call_args[0][2]
+        self.assertIn("Emitidas", shown_text)
+        self.assertIn("Recibidas", shown_text)
+
+    def test_vault_sidebar_signal_is_connected_to_the_slot(self):
+        with patch("cfdi_app.ui.main_window.QMessageBox.warning") as mock_warn:
+            self.window.vault_sidebar.multiple_tipos_violation.emit(
+                ["Emitidas", "Recibidas"])
+        mock_warn.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

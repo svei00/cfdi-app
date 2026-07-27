@@ -31,7 +31,8 @@ def autosize_columns(worksheet, dataframe):
         worksheet.column_dimensions[get_column_letter(i + 1)].width = max_length + 2
 
 
-def export_to_excel(invoice_data_list, nomina_data_list, pagos_data_list, output_file_path):
+def export_to_excel(invoice_data_list, nomina_data_list, pagos_data_list,
+                    output_file_path, incluir_pt=False):
     """
     Exporta listas de diccionarios (una para facturas, otra para nóminas, otra para pagos)
     a un archivo de Excel con hojas separadas usando Pandas.
@@ -41,6 +42,11 @@ def export_to_excel(invoice_data_list, nomina_data_list, pagos_data_list, output
         nomina_data_list (list): Lista de diccionarios para el complemento de nómina.
         pagos_data_list (list): Lista de diccionarios para el complemento de pagos.
         output_file_path (str): La ruta completa donde se guardará el archivo de Excel.
+        incluir_pt (bool): F2.8 (D30/§17.6). Si True, agrega las hojas de Papel
+            de Trabajo (edición Pro) al MISMO libro, al final. Default False
+            para que quien no pase la bandera obtenga el Excel Lite de siempre
+            (regresión intacta). El gate real lo decide core.export_report
+            leyendo settings; aquí solo se recibe ya resuelto.
 
     Nota (ROADMAP.md §6.6): esta función YA NO atrapa excepciones internamente.
     Si el archivo destino está abierto en Excel (PermissionError) o cualquier
@@ -104,5 +110,15 @@ def export_to_excel(invoice_data_list, nomina_data_list, pagos_data_list, output
                 len(pagos_data_list))
         else:
             logger.info("No hay datos de Pagos para exportar.")
+
+        # --- Hojas de Papel de Trabajo (F2.8 Pro, D30/§17.4) ---
+        # Import local a proposito: el exporter base (Lite) no debe cargar la
+        # capa fiscal si no se le pide. Van al final del MISMO libro.
+        if incluir_pt:
+            from cfdi_app.exporters.pt_exporter import escribir_hojas_pt_recibidas
+            creadas = escribir_hojas_pt_recibidas(
+                writer.book, invoice_data_list, pagos_data_list)
+            if creadas:
+                logger.info("Agregadas las hojas de Papel de Trabajo (Recibidas).")
 
     logger.info("Datos exportados exitosamente a Excel: %s", output_file_path)

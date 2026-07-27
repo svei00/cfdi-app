@@ -8,10 +8,11 @@ solo de la interfaz `VaultSource`. Cuando llegue F4 (boveda SQLite, ROADMAP §14
 bastara con implementar otra `VaultSource` que lea la disponibilidad de
 RFC/año/mes desde la DB; la capa de UI NO cambia (ROADMAP.md §11.2, D21).
 
-REGLA DURA (prompt B3 / D21): una CARGA nunca mezcla dos RFCs. La regla se
-hace cumplir AQUI, en el modelo de datos (`build_load_folders` lanza
-`MultipleRfcError`), no solo en la UI. Comparar periodos (años/meses) del MISMO
-RFC si esta permitido.
+REGLA DURA (prompt B3 / D21): una CARGA nunca mezcla dos RFCs NI dos
+direcciones (Emitidas/Recibidas). La regla se hace cumplir AQUI, en el
+modelo de datos (`build_load_folders` lanza `MultipleRfcError` /
+`MultipleTiposError`), no solo en la UI. Comparar periodos (años/meses) del
+MISMO RFC y la MISMA direccion si esta permitido.
 
 D37 (B3-R2): `FolderVaultSource.rfcs()` filtra las carpetas de primer nivel
 con un patron de RFC valido - las carpetas basura que a veces aparecen ahi
@@ -48,6 +49,24 @@ class MultipleRfcError(Exception):
         self.rfcs = list(rfcs)
         super().__init__(
             "Una carga no puede mezclar varios RFCs: " + ", ".join(self.rfcs))
+
+
+class MultipleTiposError(Exception):
+    """Se intento construir una carga que abarca mas de una direccion
+    (Emitidas/Recibidas) - mismo nivel de gravedad que MultipleRfcError (D21:
+    "NUNCA se mezclan RFCs ni direcciones"). Bug real 2026-07-25: el arbol NO
+    limpiaba sus casillas tras un Cargar exitoso, asi que marcar "todo el
+    año" en Emitidas, cargar, y luego marcar "todo el año" en Recibidas SIN
+    reiniciar la app combinaba ambas direcciones en un solo lote - el
+    resultado mezclado producia el nombre generico "MixedRFCs_Report" y
+    requeria reiniciar la app para "limpiar" el estado. Esta excepcion cierra
+    el hueco en el MODELO DE DATOS (no solo en la UI), igual que
+    MultipleRfcError."""
+
+    def __init__(self, tipos):
+        self.tipos = list(tipos)
+        super().__init__(
+            "Una carga no puede mezclar Emitidas y Recibidas: " + ", ".join(self.tipos))
 
 
 class VaultSource:
@@ -134,6 +153,9 @@ def build_load_folders(source, selections):
     """Traduce las `Selection` marcadas a una lista de carpetas para el pipeline.
 
     - Hace cumplir la REGLA DURA de un solo RFC (lanza `MultipleRfcError`).
+    - Hace cumplir la REGLA DURA de una sola direccion, Emitidas XOR
+      Recibidas (lanza `MultipleTiposError`) - la otra mitad de D21, agregada
+      2026-07-25 tras el bug real de mezcla entre direcciones.
     - Deduplica carpetas (dos selecciones pueden resolver a la misma ruta).
 
     El pipeline (`core.process_paths`) recorre cada carpeta con os.walk y
@@ -143,6 +165,15 @@ def build_load_folders(source, selections):
     rfcs = {s[0] for s in selections}
     if len(rfcs) > 1:
         raise MultipleRfcError(sorted(rfcs))
+
+    # Selection = (rfc, tipo, year, month); tipo puede ser None ("toda la
+    # boveda de este RFC" - hoy sin UI para marcarlo asi, pero la funcion lo
+    # soporta). Solo se valida cuando HAY mas de un tipo EXPLICITO distinto;
+    # ignorar aqui las tuplas sin tipo no relaja la regla, solo evita un
+    # falso positivo en un caso que la UI actual no genera.
+    tipos = {s[1] for s in selections if len(s) > 1 and s[1]}
+    if len(tipos) > 1:
+        raise MultipleTiposError(sorted(tipos))
 
     folders = []
     seen = set()

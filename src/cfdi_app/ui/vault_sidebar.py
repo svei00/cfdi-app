@@ -55,6 +55,10 @@ class VaultSidebar(QWidget):
     # Se marcaron varios RFCs: la ventana muestra el aviso (dialogo nacido del
     # clic directo en "Cargar", legitimo). Lleva la lista de RFCs en conflicto.
     single_rfc_violation = Signal(list)
+    # Se marcaron Emitidas Y Recibidas a la vez (bug real 2026-07-25, D21
+    # "nunca se mezclan direcciones"): mismo patron que single_rfc_violation,
+    # la ventana muestra el aviso. Lleva la lista de tipos en conflicto.
+    multiple_tipos_violation = Signal(list)
 
     def __init__(self, source: vault.VaultSource, parent=None):
         super().__init__(parent)
@@ -370,6 +374,9 @@ class VaultSidebar(QWidget):
             # La ventana muestra el aviso (dialogo nacido de este clic directo).
             self.single_rfc_violation.emit(exc.rfcs)
             return
+        except vault.MultipleTiposError as exc:
+            self.multiple_tipos_violation.emit(exc.tipos)
+            return
 
         if not folders:
             self.status_message.emit(
@@ -379,6 +386,37 @@ class VaultSidebar(QWidget):
         rfc = selections[0][0]
         settings.set_last_rfc(rfc)
         self.load_requested.emit(folders)
+        # Bug real 2026-07-25: las casillas NO se limpiaban tras un Cargar
+        # exitoso. Marcar "todo el año" en Emitidas, cargar, y luego marcar
+        # "todo el año" en Recibidas sin reiniciar la app dejaba AMBAS
+        # ramas marcadas - gather_selections() las recogia juntas y
+        # build_load_folders combinaba direcciones en un solo lote (D21
+        # roto). Limpiar aqui, EN VEZ DE reload() completo, preserva que
+        # ramas expandidas sigan expandidas (reload() las colapsaria todas -
+        # eso es un problema de UX aparte, ya reportado, que no se toca aqui).
+        self._clear_checked_selections()
+
+    def _clear_checked_selections(self):
+        """Desmarca TODAS las casillas de mes actualmente marcadas, sin
+        reconstruir el arbol (conserva expansion). Usa el mismo recorrido que
+        gather_selections() para que "lo que Cargar ve" y "lo que se limpia"
+        sean exactamente el mismo conjunto."""
+        self._suppress_item_changed = True
+
+        def walk(parent):
+            for row in range(parent.rowCount()):
+                item = parent.child(row)
+                if item is None:
+                    continue
+                if item.rowCount() == 0:
+                    if item.checkState() == Qt.Checked:
+                        item.setCheckState(Qt.Unchecked)
+                else:
+                    walk(item)
+
+        walk(self._model.invisibleRootItem())
+        self._suppress_item_changed = False
+        self._sync_preset_buttons()
 
     # --- Habilitacion durante el procesamiento -----------------------------
     def set_busy(self, busy):

@@ -258,7 +258,10 @@ class TestLoad(_SidebarTestCase):
     def setUp(self):
         super().setUp()
         _make_vault(self.root, {
-            "AAA010101AAA": {"Emitidas": {"2025": ["01", "02"]}},
+            "AAA010101AAA": {
+                "Emitidas": {"2025": ["01", "02"]},
+                "Recibidas": {"2025": ["01", "02"]},
+            },
             "BBB020202BBB": {"Emitidas": {"2025": ["01"]}},
         })
 
@@ -305,6 +308,53 @@ class TestLoad(_SidebarTestCase):
         current = sb._tree.currentIndex()
         self.assertTrue(current.isValid())
         self.assertEqual(sb._model.itemFromIndex(current).text(), "BBB020202BBB")
+
+    def test_checked_months_are_cleared_after_successful_load(self):
+        # Bug real 2026-07-25: sin esto, las casillas seguian marcadas y una
+        # carga POSTERIOR (de otra direccion) las recogia de nuevo sin que
+        # el usuario lo notara.
+        sb = self._sidebar()
+        year = self._year_item(sb, rfc_row=0, tipo_row=0)  # Emitidas/2025
+        year.child(0).setCheckState(Qt.Checked)
+        year.child(1).setCheckState(Qt.Checked)
+        sb.on_load_clicked()
+        self.assertEqual(year.child(0).checkState(), Qt.Unchecked)
+        self.assertEqual(year.child(1).checkState(), Qt.Unchecked)
+
+    def test_cleared_checks_do_not_leak_into_the_next_load(self):
+        # Repro exacto del bug: Emitidas -> Cargar -> Recibidas -> Cargar,
+        # sin reiniciar la app. Antes del fix, la segunda carga mezclaba
+        # ambas direcciones porque las casillas de Emitidas seguian marcadas.
+        sb = self._sidebar()
+        emitidas_year = self._year_item(sb, rfc_row=0, tipo_row=0)
+        emitidas_year.child(0).setCheckState(Qt.Checked)
+        sb.on_load_clicked()
+
+        recibidas_year = self._year_item(sb, rfc_row=0, tipo_row=1)
+        recibidas_year.child(0).setCheckState(Qt.Checked)
+        captured = []
+        violations = []
+        sb.load_requested.connect(captured.append)
+        sb.multiple_tipos_violation.connect(violations.append)
+        sb.on_load_clicked()
+
+        self.assertEqual(violations, [])  # no debe avisar: Emitidas ya se limpio
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(len(captured[0]), 1)  # solo el mes de Recibidas
+
+    def test_mixing_emitidas_and_recibidas_in_one_click_emits_violation(self):
+        # Si el usuario marca ambas direcciones ANTES de dar clic una sola
+        # vez, debe avisar (D21) y NO disparar una carga mezclada.
+        sb = self._sidebar()
+        self._year_item(sb, rfc_row=0, tipo_row=0).child(0).setCheckState(Qt.Checked)
+        self._year_item(sb, rfc_row=0, tipo_row=1).child(0).setCheckState(Qt.Checked)
+        captured = []
+        violations = []
+        sb.load_requested.connect(captured.append)
+        sb.multiple_tipos_violation.connect(violations.append)
+        sb.on_load_clicked()
+        self.assertEqual(captured, [])
+        self.assertEqual(sorted(violations[0]), ["Emitidas", "Recibidas"])
 
 
 if __name__ == "__main__":

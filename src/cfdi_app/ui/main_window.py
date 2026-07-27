@@ -137,6 +137,7 @@ class MainWindow(QMainWindow):
         self.vault_sidebar.load_requested.connect(self.on_vault_load)
         self.vault_sidebar.status_message.connect(self.append_log)
         self.vault_sidebar.single_rfc_violation.connect(self.on_single_rfc_violation)
+        self.vault_sidebar.multiple_tipos_violation.connect(self.on_multiple_tipos_violation)
 
         self._stack.setCurrentIndex(PAGE_INICIO)
 
@@ -324,6 +325,20 @@ class MainWindow(QMainWindow):
             "No se pueden mezclar dos RFCs en la misma carga.\n\n"
             "Tienes marcados: " + ", ".join(rfcs) + ".\n"
             "Deja marcado solo uno y vuelve a intentar.")
+
+    @Slot(list)
+    def on_multiple_tipos_violation(self, tipos):
+        """Aviso por clic directo en «Cargar» (regla dura D21: una direccion
+        por carga - Emitidas XOR Recibidas, nunca ambas). Bug real
+        2026-07-25: sin esta validacion, casillas de una carga anterior que
+        quedaban marcadas por accidente (vault_sidebar ahora las limpia tras
+        Cargar) podian combinarse con las de la carga nueva y mezclar
+        direcciones en un solo lote."""
+        QMessageBox.warning(
+            self, "Una dirección a la vez",
+            "No se pueden mezclar Emitidas y Recibidas en la misma carga.\n\n"
+            "Tienes marcados: " + ", ".join(tipos) + ".\n"
+            "Deja marcada solo una dirección y vuelve a intentar.")
 
     def _start_processing(self, folders):
         """Arranca el worker con una carpeta (str) o varias (list). Costura unica

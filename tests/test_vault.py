@@ -114,7 +114,10 @@ class TestBuildLoadFolders(_VaultTestCase):
     def setUp(self):
         super().setUp()
         _make_vault(self.root, {
-            "AAA010101AAA": {"Emitidas": {"2025": ["01", "02", "03"]}},
+            "AAA010101AAA": {
+                "Emitidas": {"2025": ["01", "02", "03"]},
+                "Recibidas": {"2025": ["01", "02", "03"]},
+            },
         })
         self.src = vault.FolderVaultSource(self.root)
 
@@ -157,6 +160,37 @@ class TestBuildLoadFolders(_VaultTestCase):
 
     def test_empty_selection_yields_empty_list(self):
         self.assertEqual(vault.build_load_folders(self.src, []), [])
+
+    def test_same_tipo_different_years_is_allowed(self):
+        # Comparar periodos del MISMO RFC y la MISMA direccion sigue permitido.
+        _make_vault(self.root, {"AAA010101AAA": {"Emitidas": {"2024": ["12"]}}})
+        sels = [
+            ("AAA010101AAA", "Emitidas", "2025", "01"),
+            ("AAA010101AAA", "Emitidas", "2024", "12"),
+        ]
+        folders = vault.build_load_folders(self.src, sels)
+        self.assertEqual(len(folders), 2)
+
+    def test_mixing_emitidas_then_recibidas_raises(self):
+        # Bug real 2026-07-25: este orden (Emitidas primero) era el que el
+        # dueño reprodujo con el nombre generico "MixedRFCs_Report".
+        sels = [
+            ("AAA010101AAA", "Emitidas", "2025", None),    # todo el año
+            ("AAA010101AAA", "Recibidas", "2025", None),   # todo el año
+        ]
+        with self.assertRaises(vault.MultipleTiposError) as ctx:
+            vault.build_load_folders(self.src, sels)
+        self.assertEqual(ctx.exception.tipos, ["Emitidas", "Recibidas"])
+
+    def test_mixing_recibidas_then_emitidas_also_raises(self):
+        # El orden inverso reportado por el dueño ("mixes both... need to
+        # restart the app") - misma causa, debe fallar igual en ambos sentidos.
+        sels = [
+            ("AAA010101AAA", "Recibidas", "2025", None),
+            ("AAA010101AAA", "Emitidas", "2025", None),
+        ]
+        with self.assertRaises(vault.MultipleTiposError):
+            vault.build_load_folders(self.src, sels)
 
 
 class TestResolveVaultCandidate(_VaultTestCase):

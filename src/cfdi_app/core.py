@@ -23,7 +23,7 @@ from cfdi_app.parsers.xml_parser_33 import parse_cfdi_33_invoice
 from cfdi_app.parsers.xml_parser_40 import parse_cfdi_40_invoice
 from cfdi_app.parsers.pagos_parser_20 import parse_cfdi_pago_20
 from cfdi_app.exporters.excel_exporter import export_to_excel
-from cfdi_app import paths
+from cfdi_app import paths, settings
 
 logger = logging.getLogger(__name__)
 
@@ -375,9 +375,14 @@ def export_report(result, output_path):
     Puede propagar excepciones (p. ej. PermissionError si el archivo destino
     esta abierto en Excel) - ver ROADMAP.md Sec.6.6. El llamador decide como
     mostrarlas.
+
+    F2.8 (D30/§17.6): el gate de Papel de Trabajo se lee AQUI (settings), no en
+    el exporter - asi el exporter sigue siendo agnostico y una prueba puede
+    forzar incluir_pt sin tocar settings.
     """
     export_to_excel(result.invoice_data, result.nomina_data,
-                    result.pagos_data, output_path)
+                    result.pagos_data, output_path,
+                    incluir_pt=settings.get_papel_trabajo_enabled())
 
 
 def export_report_filtered(invoice_data, nomina_data, pagos_data, output_path):
@@ -385,8 +390,12 @@ def export_report_filtered(invoice_data, nomina_data, pagos_data, output_path):
     llamador (F2.7, ROADMAP.md D29/§16) en vez de un ProcessResult completo -
     cada hoja del Excel sale segun SU PROPIO filtro de pestaña. La funcion de
     export no sabe ni le importa que hubo un filtro: es la MISMA
-    export_to_excel de siempre, solo con listas mas cortas."""
-    export_to_excel(invoice_data, nomina_data, pagos_data, output_path)
+    export_to_excel de siempre, solo con listas mas cortas.
+
+    NO incluye hojas PT (D34): un papel de trabajo fiscal sobre datos filtrados
+    seria un resumen mentiroso; el PT solo sale en la exportacion completa."""
+    export_to_excel(invoice_data, nomina_data, pagos_data, output_path,
+                    incluir_pt=False)
 
 
 # Traduccion de operadores ANTES de sanitizar (D29/§16.4): un query como
