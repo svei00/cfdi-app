@@ -303,3 +303,32 @@ class ResultsView(QTabWidget):
                 p.config.amount_fields, p.config.default_amount_field)
             for p in self._panels.values()
         }
+
+    # --- F2.9: exportacion CSV de la pestaña activa (D43/§18.6) -------------
+    def active_tab_export_data(self, all_columns=False):
+        """dict con lo necesario para exportar a CSV la pestaña que el
+        usuario tiene ABIERTA ahora mismo (currentWidget()), respetando SU
+        filtro - reusa la MISMA filtering.filter_records() que filtered_data()
+        y el proxy de la tabla, asi que la fidelidad de §16.5 aplica igual:
+        lo exportado ES lo que esa pestaña muestra en pantalla.
+
+        `all_columns`: False (default) -> "columns" trae las columnas
+        curadas del visor (TabConfig.display_columns, D18). True -> "columns"
+        viene en None a proposito - esta capa de UI no conoce las listas
+        COMPLETAS de columnas (viven en constants.py via core.py, D43); el
+        llamador (main_window) las resuelve con core.full_columns_for_tab().
+
+        Devuelve: {"title", "tab_key", "columns", "rows", "query"}.
+        """
+        panel = self.currentWidget()
+        query = panel.search_box.text()
+        rows = filtering.filter_records(
+            panel._records, query, panel.config.text_fields,
+            panel.config.amount_fields, panel.config.default_amount_field)
+        return {
+            "title": panel.config.title,
+            "tab_key": panel.config.key,
+            "columns": None if all_columns else panel.config.display_columns,
+            "rows": rows,
+            "query": query.strip(),
+        }

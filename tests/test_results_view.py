@@ -22,7 +22,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from cfdi_app import core  # noqa: E402
 from cfdi_app.ui.results_model import RecordTableModel  # noqa: E402
 from cfdi_app.ui.results_proxy import RecordFilterProxyModel  # noqa: E402
-from cfdi_app.ui.results_view import ResultsView  # noqa: E402
+from cfdi_app.ui.results_view import INVOICE_TAB, ResultsView  # noqa: E402
 
 FIXTURE_DIR = os.path.join(REPO_ROOT, "XML-Test")
 
@@ -191,6 +191,49 @@ class TestResultsViewFilteredExport(unittest.TestCase):
         # Degradacion natural (§16.2): sin filtro, exportado == completo.
         data = self.view.filtered_data()
         self.assertEqual(data["invoice_data"], self.result.invoice_data)
+
+
+class TestActiveTabExportData(unittest.TestCase):
+    """F2.9 (ROADMAP.md D43/§18.6): exportacion CSV de la pestaña ACTIVA."""
+
+    def setUp(self):
+        self.result = core.process_path(FIXTURE_DIR)
+        self.view = ResultsView()
+        self.view.set_result(self.result)
+
+    def test_default_tab_is_facturas(self):
+        data = self.view.active_tab_export_data()
+        self.assertEqual(data["title"], "Facturas")
+        self.assertEqual(data["tab_key"], "invoice_data")
+
+    def test_changing_tab_changes_the_export_data(self):
+        # Criterio §18.7.6: cambiar de pestaña cambia lo que se exporta.
+        self.view.setCurrentIndex(1)  # Nomina
+        data = self.view.active_tab_export_data()
+        self.assertEqual(data["title"], "Nómina")
+        self.assertEqual(data["tab_key"], "nomina_data")
+        self.assertEqual(data["rows"], self.result.nomina_data)
+
+    def test_default_columns_are_the_curated_visor_columns(self):
+        data = self.view.active_tab_export_data(all_columns=False)
+        self.assertEqual(data["columns"], INVOICE_TAB.display_columns)
+
+    def test_all_columns_true_returns_none_for_columns(self):
+        # La UI no resuelve las 70 columnas completas - eso es de core.py (D43).
+        data = self.view.active_tab_export_data(all_columns=True)
+        self.assertIsNone(data["columns"])
+
+    def test_respects_the_active_filter_same_as_filtered_data(self):
+        invoice_panel = self.view._panels["invoice_data"]
+        invoice_panel.search_box.setText("pintura")
+        data = self.view.active_tab_export_data()
+        self.assertEqual(data["query"], "pintura")
+        self.assertLess(len(data["rows"]), len(self.result.invoice_data))
+        self.assertEqual(data["rows"], self.view.filtered_data()["invoice_data"])
+
+    def test_no_filter_query_is_empty_string(self):
+        data = self.view.active_tab_export_data()
+        self.assertEqual(data["query"], "")
 
 
 if __name__ == "__main__":

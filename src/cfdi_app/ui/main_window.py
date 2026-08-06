@@ -152,6 +152,13 @@ class MainWindow(QMainWindow):
         self.select_action = archivo.addAction("Abrir XMLs sueltos…")
         self.select_action.triggered.connect(self.on_select_folder)
         archivo.addSeparator()
+        # F2.9 (D43/§18.3): SOLO menu, sin boton propio - la fila de acciones
+        # ya trae 5 botones y un sexto la satura. Distinto de "Guardar
+        # Excel..." (arriba): aquella accion SI duplicaba un boton siempre
+        # visible; esta no tiene boton en ningun lado, el menu es su unico hogar.
+        self.export_csv_action = archivo.addAction("Exportar pestaña a CSV…")
+        self.export_csv_action.triggered.connect(self.on_export_csv_clicked)
+        archivo.addSeparator()
         salir = archivo.addAction("Salir")
         salir.triggered.connect(self.close)
 
@@ -242,6 +249,9 @@ class MainWindow(QMainWindow):
         self.open_loose_xml_btn.setEnabled(ws.select_enabled and not moving)
         self.process_btn.setEnabled(ws.process_enabled and not moving)
         self.save_btn.setEnabled(ws.save_enabled and not moving)
+        # F2.9 (D43/§18.3): mismo criterio que "Guardar Excel..." - hay
+        # resultado (DONE) que exportar.
+        self.export_csv_action.setEnabled(ws.save_enabled and not moving)
         self.move_vault_action.setEnabled(state != AppState.PROCESSING and not moving)
         self.adopt_vault_action.setEnabled(state != AppState.PROCESSING and not moving)
         self.vault_sidebar.set_busy(state == AppState.PROCESSING or moving)
@@ -507,6 +517,58 @@ class MainWindow(QMainWindow):
         self._last_saved_path = output_path
         settings.set_last_save_dir(os.path.dirname(output_path))
         self.append_log(f"\nExcel filtrado guardado en: {output_path}")
+        self.open_btn.setEnabled(True)
+        self.open_folder_btn.setEnabled(True)
+
+    # --- Exportacion CSV de la pestaña activa (F2.9, D43/§18) ----------------
+    @Slot()
+    def on_export_csv_clicked(self):
+        """Exporta la pestaña ACTIVA del visor a CSV, respetando su filtro
+        (misma fidelidad que "Guardar filtrado…", §16.5/§18.6). Las columnas
+        (curadas del visor vs las 70 del Excel) se eligen con el propio
+        selector de filtro del dialogo de guardado - SIN widgets nuevos
+        (D44). El Excel (Guardar Excel…/Guardar filtrado…) NO cambia."""
+        if self._state != AppState.DONE or self._last_result is None:
+            return
+
+        export_data = self.results_view.active_tab_export_data()
+        default_name = core.build_csv_filename(
+            self._last_result.all_parsed_data,
+            export_data["title"], export_data["query"])
+        default_dir = settings.get_last_save_dir() or paths.REPORTS_DIR
+        default_path = os.path.join(default_dir, default_name)
+
+        filtro_visor = "Columnas del visor (*.csv)"
+        filtro_todas = "Todas las columnas (*.csv)"
+        output_path, filtro_elegido = QFileDialog.getSaveFileName(
+            self, "Exportar pestaña a CSV", default_path,
+            f"{filtro_visor};;{filtro_todas}", filtro_visor)
+
+        if not output_path:
+            self.append_log("Exportacion a CSV cancelada por el usuario.")
+            return
+
+        if filtro_elegido == filtro_todas:
+            columns = core.full_columns_for_tab(
+                export_data["tab_key"], export_data["rows"])
+        else:
+            columns = export_data["columns"]
+
+        try:
+            core.export_tab_csv(export_data["rows"], columns, output_path)
+        except PermissionError:
+            QMessageBox.critical(
+                self, APP_TITLE,
+                "No se pudo guardar el CSV: el archivo esta abierto en otro "
+                "programa (por ejemplo Excel). Cierralo e intenta de nuevo.")
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, APP_TITLE, f"Error al exportar el CSV:\n{exc}")
+            return
+
+        self._last_saved_path = output_path
+        settings.set_last_save_dir(os.path.dirname(output_path))
+        self.append_log(f"\nCSV exportado en: {output_path}")
         self.open_btn.setEnabled(True)
         self.open_folder_btn.setEnabled(True)
 

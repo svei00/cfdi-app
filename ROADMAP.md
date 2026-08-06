@@ -130,6 +130,7 @@ app (negra porque la GUI no imprime nada), y el .bat espera a que termine.
 | F2.6 | Captura de campos faltantes (parsers, UNA sola ola) | Alcance completo definido por la auditoría §13.2 + §13.5: núcleo (InformacionGlobal, TipoRelacion, `RegimenFiscal Emisor` al Excel) + **3 bugs** (typo `TotalTrasladadoBaseIVAExento`→`TotalTrasladosBaseIVAExento`; bug estructural de Pagos que nulificaba TODOS los Totales, D27; clave muerta `15101501` → 35 claves oficiales familia 1510) + "Total Sueldos" resuelto con D26 + IEDU (`autRVOE`, `rfcPago`) + Nómina (NumDiasPagados, TipoContrato, TipoRegimen, NumEmpleado, etc.) + **captura por-concepto EN MEMORIA según el contrato de §14.5 (D25)**: `ConceptosDetalle` y los `*Detalle` de Nómina. Detalle completo del resultado en §15 | F2.5 ✅ + XSDs ✅ + diseño F4 §14 ✅ | ✅ **CONSTRUIDA** 2026-07-04 (ver §15) — falta confirmación del dueño en máquina real |
 | **F2.7** | **Exportación filtrada "espejo del visor"** | Botón nuevo "Guardar filtrado…" (el actual NO cambia): cada hoja del Excel sale según SU propio filtro de pestaña — filtradas recortadas, sin filtro completas. Sufijo derivado del query sanitizado (`_Filtrado_tela`, `_Filtrado_menor2000`; fallback `_Filtrado` si hay varios filtros o queda vacío). Garantía de fidelidad: exportado ≡ visible, probado. Diseño completo en §16 (evaluación crítica incluida — no se aceptó en automático) | F2.5 ✅ (reusa `filter_records`) | ✅ **CONSTRUIDA** 2026-07-19 — suite verde (216 pruebas), falta confirmación del dueño en máquina real |
 | **F2.8** | **Reporte fiscal "Papel de trabajo" (edición Pro)** | Hojas nuevas al final del MISMO Excel: PT-Recibidas (resumen mensual IVA-flujo + detalle con semáforos de deducibilidad y columna manual "Conciliado banco"), PT-Emitidas (resumen + por cliente/CxC), hoja Fundamentos (citas legales verificadas + disclaimer). Gate de edición provisional default "todo habilitado" (D30, matiza D10). Diseño completo en §17 (D30–D35) | F2.7 (orden de etapas pedido por el dueño) + F2.6 ✅ (usa `ConceptosDetalle`) | 🔨 **EN CONSTRUCCIÓN por etapas** — etapa 1 **PT-Recibidas** (resumen+detalle+Fundamentos, capa pura `reports/pt_recibidas.py` + `exporters/pt_exporter.py`, gate `settings.papel_trabajo`) construida 2026-07-25, 247 pruebas verdes, falta prueba real del dueño; etapa 2 **PT-Emitidas** + Top pendiente |
+| **F2.9** | **Exportación CSV "para IA"** | Menú `Archivo → Exportar pestaña a CSV…`: exporta la pestaña ACTIVA del visor respetando su filtro (fidelidad §16.5). Columnas del visor por default (23) o todas (70) vía el selector de filtro del propio diálogo — el recorte de columnas ahorra 43% de tokens, más que cualquier cambio de formato (medición en §18.1). UTF-8 con BOM + LF. Las hojas PT NO se exportan. Diseño completo en §18 (D43–D45) | F2.7 ✅ (reusa `filter_records` y `build_filtered_filename`) | ✅ **CONSTRUIDA** 2026-07-25 — suite verde (295 pruebas), falta confirmación del dueño en máquina real |
 | F3 | Directorio de trabajo + auto-organización | Settings persistentes (EXTIENDE el `settings.json` sembrado en F2.5, no crea otro mecanismo), checkbox "usar siempre la misma ruta de guardado" (D14), **selector de columnas visibles del visor** (checkboxes, persistido — D18), **selector de columnas OPCIONALES del Excel exportado** (misma pantalla de Settings, persistido — D42; primer caso: Serie/Folio separados, default OFF, se insertan JUNTO a "Factura"), selector de working dir, archivado `BovedaCFDI\{RFC}\{Emitidas|Recibidas}\{YYYY}\{MM}` (año/mes = fecha de timbrado) | F2.5 | Pendiente |
 | F4 | Bóveda SQLite | Parseo único, metadatos en DB, dedup por UUID, búsqueda. **Diseño técnico COMPLETO en §14** (2026-07-04): esquema híbrido relacional+JSON elástico (D24), tablas cfdi/conceptos/nomina/pagos/pagos_doctos, política de migraciones aditivas, campo nuevo = cero migración | F2 (diseño ✅; construcción pendiente) | Pendiente |
 | F5 | Reportes y filtros | Tablas Qt Model/View + **búsqueda de texto FTS5** (nativa de SQLite) sobre descripciones de conceptos + **filtro por periodo formalizado (D21)**: día, mes, año Y rango personalizado (campos "desde–hasta"), SIEMPRE consultando la bóveda SQLite — **JAMÁS recorriendo carpetas**. **Jerarquía dura de alcance (D21): 1º RFC, 2º Emitidas/Recibidas — todo filtro opera dentro de un RFC y una dirección ya elegidos; NUNCA se mezclan RFCs ni direcciones en un mismo resultado** | F4 | Pendiente |
@@ -462,6 +463,9 @@ el botón "Guardar Excel…" lo use después; poner refs a None en el slot de
 | D34 | PT con **ambas direcciones en hojas SEPARADAS** (jerarquía D21 intacta): Recibidas = análisis de egresos/deducibilidad; Emitidas = ingresos + cuentas por cobrar por cliente ("facturado vs cobrado vs saldo por RFC receptor"). Columna manual **"Conciliado banco"** (el usuario marca ✓ contra su estado de cuenta) con sumas vivas tipo SUMAR.SI → **las hojas PT llevan FÓRMULAS reales de Excel, no valores congelados** (capacidad nueva del exporter, alcance de construcción F2.8). El PT NO sale en la exportación filtrada de F2.7 (un resumen fiscal sobre datos filtrados sería un resumen mentiroso); solo en la exportación completa | 2026-07-05 | "De nada sirve facturar 10M si solo has cobrado 100k" (dueño). La conciliación automática sigue FUERA (D22) — la marca manual es la respuesta práctica al hecho de que el CFDI declara y solo el banco confirma |
 | D35 | Cotejo IMSS = **proyección estimada, edición Top, solo ESBOZADA** (diseño fino en sesión futura): base CFDI (SBC, SDI, días pagados, incapacidades — ya capturados en F2.6) + insumos capturados por el usuario (UMA vigente, prima de riesgo de trabajo, que NO existen en el CFDI ni en la ley como valores). `LSS.md` ya está en fundamentos legales para citar las fórmulas de cuotas al diseñarlo. **NO sustituye al SUA** y el disclaimer lo dirá. Disclaimer general del PT (hoja Fundamentos): "proyección estimada con base en CFDI; no constituye cálculo de impuestos; el uso y criterio son responsabilidad del usuario/contador" | 2026-07-05 | Veredicto honesto pactado con el dueño ("si no es viable, dilo"): el cálculo exacto es SUA; el cotejo estimado sí aporta y cabe en el molde Top con el deslinde que el propio dueño redactó |
 | D42 | **Columnas opcionales del Excel exportado = casilla en Settings (F3), NO botón de toggle en la barra principal.** Primer caso real: **Serie y Folio separados**, `default OFF`. Cuando se prenden, se insertan **JUNTO a "Factura"** (posición original), NO al final de la hoja. "Factura" (el fusionado `Serie-Folio`) sigue SIEMPRE presente y jamás se mueve (D11 intacta). Al prender/apagar la casilla, Settings advierte que las columnas posteriores se recorren y que las fórmulas por posición pueden necesitar ajuste una vez. Vive en la MISMA pantalla y el MISMO `settings.json` que D18/D14 — nunca un segundo mecanismo | 2026-07-19 | Nace de un caso real: la ola B2 metió Serie/Folio a media hoja de forma incondicional y recorrió las columnas de la plantilla Excel ya armada del dueño (se retiraron de `INVOICE_COLUMN_ORDER` el 2026-07-19; el parser sigue calculándolas). **Por qué configurable y no fijo:** la asimetría es real — pasar de split a concatenado en Excel es trivial (`=A2&"-"&B2`), pero de concatenado a split es AMBIGUO si la Serie trae guion (`FAC-A-123`); la info que no se recupera aguas abajo es la separada, así que la app debe poder emitirla. Distintos ERPs piden distinto formato para INDEX/MATCH: es flexibilidad que MiAdminXML no da. **Por qué junto a "Factura" y no al final** (decisión del dueño, corrige la propuesta inicial del modelo de anexarlas al final para no mover nada): en el `cfdi:Comprobante` del XML, `Serie` y `Folio` son atributos ADYACENTES — dispersarlos rompe el espejo con la fuente y complica la trazabilidad justo al contador que no domina Excel. El recorrido de columnas es un dolor **único y opt-in** (el usuario prende la casilla una vez y la olvida, no es tarea mensual); columnas dispersas serían un riesgo de lectura **permanente** |
+| D43 | **La exportación CSV exporta la PESTAÑA ACTIVA del visor, no el libro completo** (§18.2). Un CSV es UNA tabla; el Excel son 3 hojas + PT. Multi-hoja en CSV obligaría a 3 archivos sueltos o a una concatenación que ya no es CSV válido. La pestaña del visor ya ES una tabla con filtro y columnas curadas, así que se reutiliza tal cual, incluida la garantía de fidelidad de F2.7 (exportado ≡ visible, §16.5). Las hojas PT quedan FUERA (en CSV plano perderían fórmulas vivas y semáforos, que es lo que las hace útiles — misma lógica que D34) | 2026-07-25 | El dueño pidió CSV para gastar menos tokens al consultarle cosas a una IA. Exportar 3 hojas × 70 columnas contradiría el objetivo; "lo que estoy viendo" es exactamente el subconjunto que quiere mandar |
+| D44 | **Columnas: las 23 del visor por DEFAULT; las 70 del Excel como opción, elegidas con el selector de filtro del propio `QFileDialog`** (sin checkboxes ni diálogos nuevos — `getSaveFileName` ya devuelve el filtro elegido, hoy descartado con `_`) | 2026-07-25 | Medición real sobre los fixtures (§18.1): recortar de 70 a 23 columnas ahorra **43%** de caracteres — MÁS que la penalización de cualquier formato (Markdown ×1.31, JSON ×2.57). El ahorro grande estaba en las columnas, no en el formato, así que el default debe ser el subconjunto curado que ya existe (D18) y no las 70 completas |
+| D45 | **Formato: CSV con coma, `utf-8-sig` (BOM) y fin de línea LF.** TSV descartado (empata en tamaño, 2 chars de diferencia, y pierde la apertura directa en Excel); JSON descartado (×2.57 por repetir las claves en cada fila) | 2026-07-25 | Los conceptos CFDI SÍ traen comas (verificado en fixtures), así que el quoting lo hace el módulo `csv`, nunca concatenación manual. El BOM cuesta ~1 token pero evita que Excel en Windows destroce acentos y ñ al abrir de un doble clic — el dueño es contador y va a abrirlo ahí. LF en vez de CRLF ahorra un char por fila y no deja `^M` visibles al pegar en un chat |
 
 > Nota de numeración: **D36–D40** están definidas en `docs/design-b3-r2-caratula-y-boveda.md`
 > (ola B3-R2) y **D41** (adoptar carpeta existente como bóveda, sin mover archivos)
@@ -1373,4 +1377,119 @@ validación de licencias antes de F9.
    conciliadas recalculan EN Excel (fórmulas vivas).
 7. Con la bandera de edición en "Lite", el Excel sale SIN hojas PT y es
    idéntico al actual (prueba de regresión); default = con PT.
+8. Suite completa verde + confirmación del dueño en máquina real (§8.4).
+
+## 18. Diseño de F2.9 — Exportación CSV "para IA" (2026-07-25)
+
+Nace de una pregunta del dueño: *"¿exportar a CSV es más económico en tokens
+que el XLSX cuando le pregunto algo a una IA?"*. La respuesta corta es **sí,
+pero el ahorro grande no está donde parece** — ver 18.1. Decisiones: D43–D45.
+
+### 18.1 Medición real (no intuición), hecha sobre los fixtures del repo
+
+8 facturas reales, mismo contenido, cuatro formatos de texto. Caracteres
+medidos; tokens estimados a ~4 chars/token (la proporción es lo que importa,
+y se sostiene entre tokenizadores):
+
+| Formato | 70 columnas (Excel) | 23 columnas (visor) |
+|---|---|---|
+| **CSV** | 6,036 chars (×1.00) | **3,440 chars (×1.00)** |
+| TSV | 6,034 chars (×1.00) | 3,438 chars (×1.00) |
+| Markdown | 7,885 chars (×1.31) | 3,963 chars (×1.15) |
+| JSON | 15,519 chars (×2.57) | 6,215 chars (×1.81) |
+
+Conclusiones que mandan sobre el diseño:
+
+1. **CSV y TSV empatan** (2 chars de diferencia). CSV gana por universalidad y
+   porque se abre en Excel de un doble clic. TSV no aporta nada medible.
+2. **JSON es 2.57× peor**: repite las 70 claves en CADA fila. Descartado.
+3. **El ahorro REAL es recortar columnas, no cambiar de formato**: 70→23
+   columnas ahorra **43%** (6,036→3,440). Eso es más que la penalización de
+   cualquier formato de la tabla. Por eso D44 exporta las columnas del visor
+   por default, no las 70 del Excel.
+4. **Sobre el XLSX**: comparar "tokens de XLSX vs CSV" es una falsa
+   equivalencia — el .xlsx es un ZIP binario de XMLs, no se pega en un chat;
+   una IA lo consume solo después de que alguna herramienta le extraiga las
+   celdas y las convierta a texto. Así que el dueño tiene razón en la
+   práctica, pero por un motivo más fuerte que el tamaño: **el CSV le da
+   control sobre QUÉ se manda** (una tabla, N columnas, filtrada) en vez de
+   soltar 3 hojas × 70 columnas + hojas PT y esperar que la IA se las arregle.
+
+### 18.2 Alcance — "exporta la pestaña que estás viendo"
+
+Un CSV es UNA tabla; el Excel son 3 hojas (+ PT). Forzar CSV multi-hoja
+significa 3 archivos sueltos o una concatenación que ya no es CSV válido —
+ambas cosas peores que el problema que resuelven. La pestaña del visor YA es
+exactamente lo que un CSV puede representar: una tabla, con su filtro y su
+juego de columnas curado.
+
+Entonces: **la acción exporta la pestaña ACTIVA del visor**, respetando su
+filtro activo (garantía de fidelidad idéntica a F2.7 §16.5: lo exportado ==
+lo visible). Reutiliza `filtering.filter_records()`, no reimplementa nada.
+
+**Fuera de alcance**: las hojas PT (F2.8) NO se exportan a CSV — son un papel
+de trabajo con fórmulas vivas y semáforos; en CSV plano perderían justo lo
+que las hace útiles (misma lógica que D34 excluye el PT del export filtrado).
+
+### 18.3 UI
+
+- **Menú `Archivo → Exportar pestaña a CSV…`**, NO un botón nuevo. La fila de
+  acciones ya trae 5 botones (Procesar / Guardar Excel… / Guardar filtrado… /
+  Abrir archivo / Abrir carpeta) y un sexto la satura en ventanas chicas.
+  Esto NO contradice la limpieza de 2026-07-19 (que quitó `Guardar Excel…`
+  del menú): aquella era una acción DUPLICADA de un botón siempre visible;
+  esta no tiene botón, así que el menú es su único hogar.
+- Habilitado solo en estado `DONE` (hay resultado que exportar).
+- El diálogo de guardado nace del clic directo (regla de oro §6.2 intacta).
+
+### 18.4 Elección de columnas SIN widgets nuevos (D44)
+
+`QFileDialog.getSaveFileName` ya devuelve el filtro elegido como segundo
+valor de retorno (hoy se descarta con `_`). Se usa ESE selector como el
+control de columnas, sin agregar checkboxes ni diálogos:
+
+- `Columnas del visor (*.csv)` ← **default**, 23 columnas, 43% menos tokens.
+- `Todas las columnas (*.csv)` ← las 70 del Excel, para cuando de verdad
+  hace falta el detalle completo.
+
+### 18.5 Formato del archivo (D45)
+
+- **Delimitador:** coma. Los conceptos CFDI SÍ traen comas (verificado en los
+  fixtures: `"...PLATAFORMAS DE ELEVACION, LIMPIEZA Y RETIRO..."`), así que el
+  `csv` de la stdlib debe hacer el quoting — no se concatena a mano.
+- **Encoding:** `utf-8-sig` (UTF-8 con BOM). El BOM cuesta 3 bytes (~1 token,
+  irrelevante) y evita que Excel en Windows destroce los acentos y las ñ al
+  abrir el archivo de un doble clic. La mayoría de los lectores de IA lo
+  ignoran. Trade-off decidido a favor del caso "el contador lo abre".
+- **Fin de línea:** `\n` (LF), no CRLF: ahorra un char por fila y no ensucia
+  con `^M` visibles al pegarlo en un chat. Requiere `lineterminator='\n'`
+  explícito (el default del módulo `csv` es CRLF).
+- **Nombre:** base de `core.build_default_filename` + nombre de la pestaña +
+  el sufijo de filtro que YA calcula F2.7 (`core.build_filtered_filename`),
+  con extensión `.csv`. Ej.: `XAXX_Recibidas_2026_06_Facturas_Filtrado_tela.csv`.
+
+### 18.6 Capas (respetando §5.3 — la UI no conoce el formato)
+
+1. `exporters/csv_exporter.py` (nuevo) — `export_rows_to_csv(rows, columns,
+   path)`. Sin Qt, sin pandas: `csv.DictWriter` con `extrasaction='ignore'`.
+2. `core.export_tab_csv(...)` — costura delgada, mismo patrón que
+   `export_report` / `export_report_filtered`; propaga excepciones (§6.6).
+3. `ResultsView.active_tab_export_data(all_columns=False)` — devuelve
+   `(titulo, columnas, filas_filtradas, query)` de la pestaña activa, usando
+   `filter_records` (misma fidelidad que §16.5).
+4. `main_window.on_export_csv_clicked()` — diálogo, nombre propuesto, llamada,
+   y `_last_saved_path` para que "Abrir archivo"/"Abrir carpeta" apunten ahí.
+
+### 18.7 Criterios de aceptación de F2.9
+
+1. Con la pestaña Facturas activa y filtro `tela`, el CSV trae SOLO las filas
+   visibles y el nombre termina en `_Facturas_Filtrado_tela.csv`.
+2. Sin filtro, el CSV trae la pestaña completa.
+3. Default = 23 columnas del visor; con el filtro `Todas las columnas`, 70.
+4. Un concepto con coma sale correctamente entrecomillado y al releerlo con
+   `csv.DictReader` devuelve el MISMO valor (ida y vuelta, sin corrupción).
+5. Acentos y ñ se abren bien en Excel (BOM presente) y las líneas terminan
+   en LF.
+6. Cambiar de pestaña cambia lo que se exporta (Nómina exporta Nómina).
+7. `Guardar Excel…` y `Guardar filtrado…` NO cambian (regresión).
 8. Suite completa verde + confirmación del dueño en máquina real (§8.4).

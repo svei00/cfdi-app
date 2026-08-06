@@ -11,6 +11,7 @@ import logging
 import os
 import platform
 import re
+import unicodedata
 import subprocess
 import zipfile
 import tempfile
@@ -23,6 +24,10 @@ from cfdi_app.parsers.xml_parser_33 import parse_cfdi_33_invoice
 from cfdi_app.parsers.xml_parser_40 import parse_cfdi_40_invoice
 from cfdi_app.parsers.pagos_parser_20 import parse_cfdi_pago_20
 from cfdi_app.exporters.excel_exporter import export_to_excel
+from cfdi_app.exporters.csv_exporter import export_rows_to_csv
+from cfdi_app.constants import (
+    INVOICE_COLUMN_ORDER, PAGOS_COLUMN_ORDER, INTERNAL_ONLY_FIELDS,
+)
 from cfdi_app import paths, settings
 
 logger = logging.getLogger(__name__)
@@ -413,10 +418,20 @@ _FILTER_SUFFIX_MAX_LEN = 30
 
 
 def _sanitize_filter_suffix(query):
-    """Convierte un query de busqueda del visor en un sufijo de archivo
-    seguro (D29/§16.4). Devuelve None si no queda nada usable (el llamador
-    cae al sufijo generico "_Filtrado")."""
+    """Convierte un query de busqueda del visor (o, desde F2.9/D45, un
+    titulo de pestaña como "Nómina") en un sufijo de archivo seguro
+    (D29/§16.4). Devuelve None si no queda nada usable (el llamador cae al
+    sufijo generico "_Filtrado").
+
+    Los acentos/eñes se NORMALIZAN a su letra base (NFKD + descartar marcas
+    combinantes) ANTES de filtrar caracteres no-ASCII, no se pierden en
+    silencio - "Nómina" -> "Nomina", no "Nmina". Bug real encontrado
+    2026-07-25 al reusar esta funcion para nombres de pestaña (F2.9): con
+    solo queries de busqueda tipeadas por el usuario nunca se habia notado
+    que una letra acentuada simplemente desaparecia."""
     text = query.strip()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
     for symbol, word in _FILTER_OPERATOR_WORDS:
         text = text.replace(symbol, word)
     text = text.replace(" ", "_")
@@ -445,6 +460,65 @@ def build_filtered_filename(parsed_data_list, active_queries):
     if suffix:
         return f"{stem}_Filtrado_{suffix}{ext}"
     return f"{stem}_Filtrado{ext}"
+
+
+# --- F2.9: exportacion CSV de una pestaña del visor (ROADMAP.md D43-D45) ---
+
+def full_columns_for_tab(tab_key, rows):
+    """Lista COMPLETA de columnas (opcion "Todas las columnas" de §18.4) para
+    la pestaña `tab_key` ("invoice_data"/"nomina_data"/"pagos_data").
+
+    Facturas y Pagos ya tienen un orden fijo oficial (mismas listas que usa
+    el Excel completo). Nomina NO tiene una lista fija (deuda tecnica ya
+    documentada en excel_exporter.py) - se resuelve por union de las claves
+    presentes en `rows`, en orden de PRIMERA aparicion (deterministico,
+    reproducible corrida tras corrida), excluyendo los mismos campos
+    internos que el Excel ya excluye (CFDI_Type + INTERNAL_ONLY_FIELDS).
+    """
+    if tab_key == "invoice_data":
+        return [c for c in INVOICE_COLUMN_ORDER if c != "CFDI_Type"]
+    if tab_key == "pagos_data":
+        return [c for c in PAGOS_COLUMN_ORDER if c != "CFDI_Type"]
+
+    excluidos = {"CFDI_Type"} | set(INTERNAL_ONLY_FIELDS)
+    vistas = []
+    vistas_set = set()
+    for row in rows:
+        for key in row:
+            if key in excluidos or key in vistas_set:
+                continue
+            vistas.append(key)
+            vistas_set.add(key)
+    return vistas
+
+
+def build_csv_filename(parsed_data_list, tab_title, query=""):
+    """Nombre del CSV (D45/§18.5): mismo nombre base que el Excel + nombre de
+    la pestaña + sufijo de filtro (si `query` no esta vacio), extension
+    .csv. Ej.: "XAXX..._Recibidas_2026_06_Facturas_Filtrado_tela.csv".
+
+    Reusa _sanitize_filter_suffix tanto para el titulo de pestaña como para
+    el query - mismas reglas de sanitizacion en un solo lugar (D29)."""
+    base_name = build_default_filename(parsed_data_list)
+    stem, _ext = os.path.splitext(base_name)
+    tab_suffix = _sanitize_filter_suffix(tab_title) or "Datos"
+
+    query = (query or "").strip()
+    if not query:
+        return f"{stem}_{tab_suffix}.csv"
+
+    filtro_suffix = _sanitize_filter_suffix(query)
+    if filtro_suffix:
+        return f"{stem}_{tab_suffix}_Filtrado_{filtro_suffix}.csv"
+    return f"{stem}_{tab_suffix}_Filtrado.csv"
+
+
+def export_tab_csv(rows, columns, output_path):
+    """Exporta UNA tabla del visor a CSV (D43). `rows`/`columns` YA resueltos
+    por el llamador (ResultsView.active_tab_export_data() + full_columns_for_tab
+    si se pidio "Todas las columnas"). Puede propagar excepciones igual que
+    export_report (Sec.6.6) - el llamador decide como mostrarlas."""
+    export_rows_to_csv(rows, columns, output_path)
 
 
 def open_file(path):
