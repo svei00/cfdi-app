@@ -33,6 +33,18 @@ FIXTURE_DIR = os.path.join(REPO_ROOT, "XML-Test")
 _app = QApplication.instance() or QApplication([])
 
 
+def _read_csv(path):
+    """(preamble_lines, header, filas_dict) saltando las lineas '#' del
+    encabezado unico (D46) antes de parsear la tabla real."""
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        raw_lines = f.readlines()
+    preamble = [line.rstrip("\n") for line in raw_lines if line.startswith("#")]
+    table_lines = [line for line in raw_lines if not line.startswith("#")]
+    reader = csv.DictReader(table_lines)
+    rows = list(reader)
+    return preamble, reader.fieldnames, rows
+
+
 class _ExportCsvTestCase(unittest.TestCase):
     """Arranca la ventana YA en estado DONE con un resultado real cargado."""
 
@@ -83,8 +95,10 @@ class TestExportCsvActionEnablement(_ExportCsvTestCase):
 
 
 class TestExportCsvFlow(_ExportCsvTestCase):
-    def test_default_exports_curated_visor_columns_for_active_tab(self):
+    def test_default_exports_curated_columns_for_active_tab(self):
         # Criterio §18.7.3 (default) + §18.7.1 (nombre con pestaña).
+        # D46-D48: el set curado YA NO es el del visor (23) - es el propio
+        # de csv_curation.CSV_INVOICE_COLUMNS, menos lo que se hoistee.
         expected_path = os.path.join(self._tmp.name, "salida.csv")
         filtro_visor = "Columnas del visor (*.csv)"
 
@@ -96,14 +110,17 @@ class TestExportCsvFlow(_ExportCsvTestCase):
         self.assertIn("_Facturas", proposed_path)
         self.assertTrue(os.path.exists(expected_path))
 
-        with open(expected_path, encoding="utf-8-sig", newline="") as f:
-            header = next(csv.reader(f))
-        self.assertEqual(len(header), 23)  # columnas curadas del visor (D18)
+        preamble, header, rows = _read_csv(expected_path)
+        # Columnas de suficiencia (D48) deben estar presentes en alguna parte
+        # (tabla o encabezado unico - segun hayan salido constantes o no).
+        vistos = set(header) | {line.split(":")[0][2:] for line in preamble}
+        for esperado in ("Serie", "Folio", "Fecha Timbrado", "IVA 16 Base"):
+            self.assertIn(esperado, vistos)
         self.assertEqual(self.window._last_saved_path, expected_path)
         self.assertTrue(self.window.open_btn.isEnabled())
 
-    def test_todas_las_columnas_filter_exports_full_column_set(self):
-        # Criterio §18.7.3 (alterno).
+    def test_todas_las_columnas_filter_exports_full_column_set_no_hoisting(self):
+        # Criterio §18.7.3 (alterno). "Todas las columnas" no hoistea nada.
         expected_path = os.path.join(self._tmp.name, "completo.csv")
         filtro_todas = "Todas las columnas (*.csv)"
 
@@ -111,9 +128,9 @@ class TestExportCsvFlow(_ExportCsvTestCase):
                     return_value=(expected_path, filtro_todas)):
             self.window.on_export_csv_clicked()
 
-        with open(expected_path, encoding="utf-8-sig", newline="") as f:
-            header = next(csv.reader(f))
-        self.assertGreater(len(header), 40)  # las 70 columnas del Excel
+        preamble, header, _rows = _read_csv(expected_path)
+        self.assertEqual(preamble, [])  # sin encabezado unico en modo "todas"
+        self.assertGreater(len(header), 40)  # las 70 del Excel + suficiencia
 
     def test_respects_active_filter_on_the_active_tab(self):
         # Criterio §18.7.1: filtro activo -> solo esas filas, nombre con sufijo.
@@ -128,8 +145,7 @@ class TestExportCsvFlow(_ExportCsvTestCase):
         proposed_path = mock_dialog.call_args[0][2]
         self.assertIn("_Filtrado_pintura", proposed_path)
 
-        with open(expected_path, encoding="utf-8-sig", newline="") as f:
-            rows = list(csv.DictReader(f))
+        _preamble, _header, rows = _read_csv(expected_path)
         filtradas = self.window.results_view.filtered_data()["invoice_data"]
         self.assertEqual(len(rows), len(filtradas))
         self.assertLess(len(rows), len(self.result.invoice_data))
@@ -145,8 +161,7 @@ class TestExportCsvFlow(_ExportCsvTestCase):
 
         proposed_path = mock_dialog.call_args[0][2]
         self.assertIn("_Nomina", proposed_path)
-        with open(expected_path, encoding="utf-8-sig", newline="") as f:
-            rows = list(csv.DictReader(f))
+        _preamble, _header, rows = _read_csv(expected_path)
         self.assertEqual(len(rows), len(self.result.nomina_data))
 
     def test_cancelling_the_dialog_does_not_save_or_change_state(self):

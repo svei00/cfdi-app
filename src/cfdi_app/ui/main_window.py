@@ -524,10 +524,11 @@ class MainWindow(QMainWindow):
     @Slot()
     def on_export_csv_clicked(self):
         """Exporta la pestaña ACTIVA del visor a CSV, respetando su filtro
-        (misma fidelidad que "Guardar filtrado…", §16.5/§18.6). Las columnas
-        (curadas del visor vs las 70 del Excel) se eligen con el propio
-        selector de filtro del dialogo de guardado - SIN widgets nuevos
-        (D44). El Excel (Guardar Excel…/Guardar filtrado…) NO cambia."""
+        (misma fidelidad que "Guardar filtrado…", §16.5/§18.6). El modo de
+        columnas (curado D46-D48 vs las 70 del Excel + suficiencia) se elige
+        con el propio selector de filtro del dialogo de guardado - SIN
+        widgets nuevos (D44). El Excel (Guardar Excel…/Guardar filtrado…) NO
+        cambia."""
         if self._state != AppState.DONE or self._last_result is None:
             return
 
@@ -548,14 +549,17 @@ class MainWindow(QMainWindow):
             self.append_log("Exportacion a CSV cancelada por el usuario.")
             return
 
-        if filtro_elegido == filtro_todas:
-            columns = core.full_columns_for_tab(
-                export_data["tab_key"], export_data["rows"])
-        else:
-            columns = export_data["columns"]
+        # D46-D48: curacion + campos derivados (bases IVA, cruce relacionado)
+        # + columnas constantes separadas a un encabezado unico, todo resuelto
+        # aqui - el cruce necesita el LOTE COMPLETO (sin filtrar) para tener
+        # la mejor oportunidad de encontrar el CFDI relacionado.
+        preamble, columns, rows = core.build_csv_export(
+            export_data["tab_key"], export_data["rows"],
+            all_columns=(filtro_elegido == filtro_todas),
+            full_batch_invoice_data=self._last_result.invoice_data)
 
         try:
-            core.export_tab_csv(export_data["rows"], columns, output_path)
+            core.export_tab_csv(rows, columns, output_path, preamble_lines=preamble)
         except PermissionError:
             QMessageBox.critical(
                 self, APP_TITLE,

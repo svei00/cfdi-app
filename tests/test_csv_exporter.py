@@ -157,6 +157,103 @@ class TestExportTabCsv(unittest.TestCase):
                 reader = list(csv.DictReader(f))
             self.assertEqual(reader[0], {"RFC Emisor": "AAA010101AAA", "Total": "1160.0"})
 
+    def test_preamble_lines_are_written_before_the_header(self):
+        # D46: encabezado unico para columnas constantes.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "salida.csv")
+            core.export_tab_csv(
+                [{"RFC Emisor": "AAA010101AAA"}], ["RFC Emisor"], out,
+                preamble_lines=["# Nombre: PROVEEDOR SA"])
+            with open(out, encoding="utf-8-sig") as f:
+                lines = f.readlines()
+            self.assertEqual(lines[0].rstrip("\n"), "# Nombre: PROVEEDOR SA")
+            self.assertEqual(lines[1].rstrip("\n"), "RFC Emisor")
+
+    def test_no_preamble_produces_pure_csv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "salida.csv")
+            core.export_tab_csv([{"A": "1"}], ["A"], out)
+            with open(out, encoding="utf-8-sig") as f:
+                lines = f.readlines()
+            self.assertEqual(lines[0].rstrip("\n"), "A")
+
+
+class TestBuildCsvExport(unittest.TestCase):
+    """core.build_csv_export - orquestacion completa de F2.9 correcciones
+    (D46-D48): curacion + enriquecimiento + hoisting, aislado de Qt."""
+
+    def _factura(self, uuid, receptor, emisor="BBB020202BBB", total=1160.0,
+                iva=160.0, forma="03", metodo="PUE", fecha="15/06/2026",
+                tipo_rel=None, uuid_rel=None, conceptos=None):
+        return {
+            "CFDI_Type": "Invoice", "Tipo": "Factura", "UUID": uuid,
+            "Serie": "A", "Folio": "1",
+            "RFC Emisor": emisor, "Nombre Emisor": "Proveedor",
+            "RFC Receptor": receptor, "Nombre Receptor": "Cliente",
+            "Metodo de Pago": f"{metodo} - x", "FormaDePago": f"{forma} - x",
+            "Fecha Emision": fecha, "Fecha Timbrado": f"{fecha} 10:00:00",
+            "SubTotal": total - iva, "Descuento": 0.0, "IVA 16%": iva,
+            "Retenido IVA": 0.0, "Retenido ISR": 0.0, "Total IEPS": 0.0,
+            "Total": total, "Moneda": "MXN", "Tipo De Cambio": 1.0,
+            "UsoCFDI": "G03 - Gastos en general", "LugarDeExpedicion": "64000",
+            "Conceptos": "Venta", "Tipo Relacion": tipo_rel,
+            "UUID Relacion": uuid_rel,
+            "ConceptosDetalle": conceptos or [{
+                "Impuestos": {"Traslados": [
+                    {"Impuesto": "002", "TipoFactor": "Tasa",
+                     "TasaOCuota": "0.160000", "Base": str(total - iva)}]}}],
+        }
+
+    def test_default_hoists_constant_rfc_receptor_for_recibidas_batch(self):
+        lote = [self._factura("U1", receptor="YO010101AAA"),
+               self._factura("U2", receptor="YO010101AAA", emisor="CCC030303CCC")]
+        preamble, columns, rows = core.build_csv_export(
+            "invoice_data", lote, all_columns=False, full_batch_invoice_data=lote)
+        preamble_text = "\n".join(preamble)
+        self.assertIn("RFC Receptor: YO010101AAA", preamble_text)
+        self.assertNotIn("RFC Receptor", columns)  # hoisteada, fuera de la tabla
+        self.assertIn("RFC Emisor", columns)  # varia, se queda
+
+    def test_all_columns_mode_never_hoists(self):
+        lote = [self._factura("U1", receptor="YO010101AAA"),
+               self._factura("U2", receptor="YO010101AAA")]
+        preamble, columns, _rows = core.build_csv_export(
+            "invoice_data", lote, all_columns=True, full_batch_invoice_data=lote)
+        self.assertEqual(preamble, [])
+        self.assertIn("RFC Receptor", columns)
+
+    def test_dates_are_curated_to_iso(self):
+        lote = [self._factura("U1", "YO"), self._factura("U2", "YO")]
+        _preamble, _columns, rows = core.build_csv_export(
+            "invoice_data", lote, all_columns=True, full_batch_invoice_data=lote)
+        self.assertEqual(rows[0]["Fecha Emision"], "2026-06-15")
+
+    def test_uuid_is_uppercased(self):
+        lote = [self._factura("abc-def", "YO"), self._factura("ghi-jkl", "YO")]
+        _preamble, _columns, rows = core.build_csv_export(
+            "invoice_data", lote, all_columns=True, full_batch_invoice_data=lote)
+        self.assertEqual(rows[0]["UUID"], "ABC-DEF")
+
+    def test_related_document_is_resolved_against_full_batch(self):
+        original = self._factura("ORIG-1", "YO")
+        nc = self._factura("NC-1", "YO", tipo_rel="01", uuid_rel="orig-1")
+        lote = [original, nc]
+        _preamble, _columns, rows = core.build_csv_export(
+            "invoice_data", [nc], all_columns=True, full_batch_invoice_data=lote)
+        self.assertEqual(rows[0]["Serie Relacionada"], "A")
+        self.assertEqual(rows[0]["Folio Relacionada"], "1")
+
+    def test_nomina_tab_uses_its_own_curated_columns(self):
+        lote = [{"CFDI_Type": "Nomina", "Tipo": "Nómina", "UUID": "n1",
+                "RFC Emisor": "AAA", "RFC Receptor": "EMP1"},
+                {"CFDI_Type": "Nomina", "Tipo": "Nómina", "UUID": "n2",
+                "RFC Emisor": "AAA", "RFC Receptor": "EMP2"}]
+        preamble, columns, rows = core.build_csv_export(
+            "nomina_data", lote, all_columns=False, full_batch_invoice_data=[])
+        self.assertIn("Tipo: N - Nómina", "\n".join(preamble))
+        self.assertIn("RFC Receptor", columns)
+        self.assertEqual(len(rows), 2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

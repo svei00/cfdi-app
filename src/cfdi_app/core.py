@@ -513,12 +513,81 @@ def build_csv_filename(parsed_data_list, tab_title, query=""):
     return f"{stem}_{tab_suffix}_Filtrado.csv"
 
 
-def export_tab_csv(rows, columns, output_path):
+def export_tab_csv(rows, columns, output_path, preamble_lines=None):
     """Exporta UNA tabla del visor a CSV (D43). `rows`/`columns` YA resueltos
-    por el llamador (ResultsView.active_tab_export_data() + full_columns_for_tab
-    si se pidio "Todas las columnas"). Puede propagar excepciones igual que
-    export_report (Sec.6.6) - el llamador decide como mostrarlas."""
-    export_rows_to_csv(rows, columns, output_path)
+    por el llamador - hoy siempre via build_csv_export() (D46-D48), que
+    curó valores, agregó campos derivados y separó columnas constantes en
+    `preamble_lines`. Puede propagar excepciones igual que export_report
+    (Sec.6.6) - el llamador decide como mostrarlas."""
+    export_rows_to_csv(rows, columns, output_path, preamble_lines=preamble_lines)
+
+
+def _dedup_extend(base_columns, extra_columns):
+    """`base_columns` + los de `extra_columns` que NO esten ya presentes,
+    preservando orden, sin duplicar. Usado para agregar las columnas de
+    suficiencia (D48) al modo "Todas las columnas" sin arriesgar una
+    columna repetida si el Excel ya la trae."""
+    result = list(base_columns)
+    seen = set(result)
+    for col in extra_columns:
+        if col not in seen:
+            result.append(col)
+            seen.add(col)
+    return result
+
+
+def build_csv_export(tab_key, rows, all_columns, full_batch_invoice_data):
+    """Arma (preamble_lines, columnas, filas_curadas) listas para
+    export_tab_csv() - F2.9 correcciones tras prueba real (D46-D48).
+
+    `rows`: YA filtradas por el llamador (ResultsView.active_tab_export_data,
+    respeta el filtro activo de esa pestaña, §16.5).
+    `all_columns`: False -> set curado (D46-D48); True -> las columnas
+    completas del Excel + las de suficiencia agregadas (D48) - SIN hoisting,
+    "todas las columnas" significa ver TODO, no recortar nada.
+    `full_batch_invoice_data`: ProcessResult.invoice_data COMPLETO (sin
+    filtrar) - la mejor oportunidad de resolver el cruce con el CFDI
+    relacionado (D48/#11), independiente del filtro activo en pantalla.
+
+    Import local de reports.csv_curation a proposito (mismo patron que
+    excel_exporter.py con pt_exporter): la exportacion base no debe cargar
+    la capa de curacion CSV si no se le pide.
+    """
+    from cfdi_app.reports import csv_curation as cur
+
+    uuid_index = cur.build_uuid_index(full_batch_invoice_data)
+
+    if tab_key == "invoice_data":
+        enriched_rows = [cur.enrich_invoice_row(r, uuid_index) for r in rows]
+        columns = (list(cur.CSV_INVOICE_COLUMNS) if not all_columns else
+                  _dedup_extend(full_columns_for_tab(tab_key, rows),
+                               cur.EXTRA_INVOICE_COLUMNS))
+    elif tab_key == "pagos_data":
+        enriched_rows = [cur.enrich_pagos_row(r, uuid_index) for r in rows]
+        columns = (list(cur.CSV_PAGOS_COLUMNS) if not all_columns else
+                  _dedup_extend(full_columns_for_tab(tab_key, rows),
+                               cur.EXTRA_PAGOS_COLUMNS))
+    else:  # nomina_data - sin campos derivados en esta ronda
+        enriched_rows = rows
+        columns = (list(cur.CSV_NOMINA_COLUMNS) if not all_columns else
+                  full_columns_for_tab(tab_key, rows))
+
+    # Curar PRIMERO (fechas ISO, dinero a 2 decimales, UUID mayusculas,
+    # codigo+etiqueta) y RECIEN DESPUES decidir que es constante: la
+    # curacion es 1-a-1, asi que si los valores crudos eran identicos entre
+    # filas, los curados tambien lo son (y viceversa) - no cambia el
+    # resultado del hoisting, solo evita curar dos veces.
+    curated_rows = [cur.curate_row(r, columns) for r in enriched_rows]
+
+    if all_columns:
+        # "Todas las columnas" = ver TODO; el hoisting es una forma de
+        # recorte y solo aplica al set curado por default (D46).
+        return [], columns, curated_rows
+
+    constantes, columnas_restantes, filas_finales = cur.hoist_constant_columns(
+        curated_rows, columns)
+    preamble = cur.build_preamble_lines(constantes)
+    return preamble, columnas_restantes, filas_finales
 
 
 def open_file(path):
