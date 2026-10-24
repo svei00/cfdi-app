@@ -31,7 +31,10 @@ NO_ENCONTRADO = "No Encontrado"
 ERROR = "Error"          # no se pudo consultar (red); NUNCA se guarda en cache
 
 # Cuanto tiempo vale un resultado guardado. Cancelado es definitivo.
-_VIGENCIA_CACHE = {VIGENTE: timedelta(days=7), NO_ENCONTRADO: timedelta(days=1)}
+# Vigente caduca en 1 hora: una factura vigente hoy puede cancelarse manana, y
+# con 7 dias de cache un cancelado reciente salia como Vigente (el dueño pulsa
+# el boton justamente para enterarse). Cancelado es definitivo.
+_VIGENCIA_CACHE = {VIGENTE: timedelta(hours=1), NO_ENCONTRADO: timedelta(hours=1)}
 
 
 # --- Consulta ---------------------------------------------------------------

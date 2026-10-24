@@ -74,18 +74,18 @@ class TestCache(unittest.TestCase):
         self.cache.put("abc", {"estado": estado, "es_cancelable": "", "estatus_cancelacion": ""},
                        now=self.t0)
 
-    def test_vigente_vale_7_dias(self):
+    def test_vigente_vale_1_hora(self):
         self._put(ss.VIGENTE)
-        self.assertIsNotNone(self.cache.get("ABC", now=self.t0 + timedelta(days=6)))
-        self.assertIsNone(self.cache.get("ABC", now=self.t0 + timedelta(days=8)))
+        self.assertIsNotNone(self.cache.get("ABC", now=self.t0 + timedelta(minutes=30)))
+        self.assertIsNone(self.cache.get("ABC", now=self.t0 + timedelta(hours=2)))
 
     def test_cancelado_nunca_caduca(self):
         self._put(ss.CANCELADO)
         self.assertIsNotNone(self.cache.get("abc", now=self.t0 + timedelta(days=900)))
 
-    def test_no_encontrado_vale_1_dia(self):
+    def test_no_encontrado_vale_1_hora(self):
         self._put(ss.NO_ENCONTRADO)
-        self.assertIsNone(self.cache.get("abc", now=self.t0 + timedelta(days=2)))
+        self.assertIsNone(self.cache.get("abc", now=self.t0 + timedelta(hours=2)))
 
     def test_error_no_se_guarda(self):
         self._put(ss.ERROR)
