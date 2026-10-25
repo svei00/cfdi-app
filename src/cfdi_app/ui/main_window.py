@@ -45,7 +45,8 @@ from cfdi_app.ui.inicio_page import InicioPage
 from cfdi_app.ui.reportes_page import ReportesPage
 from cfdi_app.ui.state import AppState, widget_states_for
 from cfdi_app.ui.vault_move_worker import VaultMoveWorker
-from cfdi_app.ui.status_worker import StatusWorker
+from cfdi_app import sat_status
+from cfdi_app.ui.status_worker import CACHE_FILE_NAME, StatusWorker
 from cfdi_app.ui.worker import ProcessWorker
 
 logger = logging.getLogger(__name__)
@@ -642,9 +643,28 @@ class MainWindow(QMainWindow):
         )
         self.append_log(summary)
         self._log_errors(result.errors)
+        self._aplicar_estatus_guardado(result)
         self.results_view.set_result(result)
 
     # --- F7-lite: estatus SAT ----------------------------------------------
+    def _aplicar_estatus_guardado(self, result):
+        """Sin red: recupera del cache los CFDI ya detectados como cancelados
+        para que no 'desaparezcan' al recargar el lote. Nunca rompe la carga."""
+        try:
+            cache = sat_status.StatusCache(
+                os.path.join(core.BASE_APP_DIR, CACHE_FILE_NAME))
+            records = (list(result.invoice_data) + list(result.nomina_data)
+                       + list(result.pagos_data))
+            cancelados = sat_status.apply_cached_status(records, cache)
+        except Exception:
+            logger.exception("No se pudo leer el cache de estatus SAT")
+            return
+        if cancelados:
+            self.append_log(
+                f"\nATENCION: {cancelados} CFDI figuran como CANCELADOS en el "
+                f"caché del SAT (columna Estado SAT). Pulsa «Verificar estatus "
+                f"SAT» para actualizar el resto.")
+
     def on_verify_sat_clicked(self):
         """Clic del usuario: consulta el estatus SAT de todo el lote cargado.
         Corre en su propio hilo; los slots solo mutan estado (REGLA DE ORO)."""

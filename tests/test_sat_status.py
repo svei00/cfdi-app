@@ -156,5 +156,23 @@ class TestVerifyRecords(unittest.TestCase):
         self.assertEqual(avances[-1], (3, 3))
 
 
+class TestApplyCachedStatus(unittest.TestCase):
+    def test_cancelado_reaparece_al_recargar_y_vigente_viejo_no(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = ss.StatusCache(os.path.join(tmp, "c.sqlite"))
+            hace_un_dia = datetime.now() - timedelta(days=1)
+            cache.put("AAAA", {"estado": ss.CANCELADO}, now=hace_un_dia)
+            cache.put("BBBB", {"estado": ss.VIGENTE}, now=hace_un_dia)
+            cache.put("CCCC", {"estado": ss.VIGENTE})            # reciente
+            recs = [{"UUID": u, "RFC Emisor": "E", "RFC Receptor": "R", "Total": 1}
+                    for u in ("aaaa", "bbbb", "cccc", "dddd")]
+            n = ss.apply_cached_status(recs, cache)
+        self.assertEqual(n, 1)
+        self.assertEqual(recs[0]["Estado SAT"], ss.CANCELADO)
+        self.assertNotIn("Estado SAT", recs[1])   # vigente viejo: en blanco
+        self.assertEqual(recs[2]["Estado SAT"], ss.VIGENTE)
+        self.assertNotIn("Estado SAT", recs[3])   # nunca verificado
+
+
 if __name__ == "__main__":
     unittest.main()

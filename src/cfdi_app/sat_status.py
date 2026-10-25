@@ -152,6 +152,25 @@ class StatusCache:
                          result.get("estatus_cancelacion", ""), now.isoformat()))
 
 
+def apply_cached_status(records, cache, now=None):
+    """Llena `Estado SAT` SOLO con lo que ya esta en el cache, SIN red: al
+    recargar un lote (otra descarga de XML, otro reporte) los Cancelados ya
+    detectados vuelven a aparecer solos. Un Vigente viejo NO se muestra (podria
+    haberse cancelado despues): queda en blanco hasta volver a verificar.
+    Devuelve el numero de cancelados encontrados."""
+    cancelados = 0
+    for record in records:
+        ident = _identity(record)
+        if not (ident and ident[0]):
+            continue
+        guardado = cache.get(str(ident[0]).strip(), now=now)
+        if guardado:
+            record["Estado SAT"] = guardado["estado"]
+            if guardado["estado"] == CANCELADO:
+                cancelados += 1
+    return cancelados
+
+
 # --- Verificacion de un lote ------------------------------------------------
 
 def _identity(record):
