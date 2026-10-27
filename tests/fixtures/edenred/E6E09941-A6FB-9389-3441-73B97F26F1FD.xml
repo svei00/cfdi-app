@@ -1,0 +1,21 @@
+<cfdi:Comprobante xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd" Version="4.0" Serie="TCTL" Folio="000100004730" Fecha="2026-09-02T03:20:20" Sello="ANONIMIZADO" FormaPago="03" NoCertificado="00001000000715026062" Certificado="ANONIMIZADO" SubTotal="127.59" Descuento="0.00" Moneda="MXN" Total="148.00" TipoDeComprobante="I" Exportacion="01" MetodoPago="PUE" LugarExpedicion="11520">
+  <cfdi:Emisor Rfc="ASE930924SS7" Nombre="EDENRED MEXICO" RegimenFiscal="601" />
+  <cfdi:Receptor Rfc="GAGG010101000" Nombre="RECEPTOR GASOLINA PRUEBA" DomicilioFiscalReceptor="01000" RegimenFiscalReceptor="612" UsoCFDI="G03" />
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="84141602" Cantidad="8.00" ClaveUnidad="E54" Unidad="VIAJE" Descripcion="Movimientos Telepeaje" ValorUnitario="15.95" Importe="127.59" Descuento="0.00" ObjetoImp="02">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="127.59" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="20.41" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+  </cfdi:Conceptos>
+  <cfdi:Impuestos TotalImpuestosTrasladados="20.41">
+    <cfdi:Traslados>
+      <cfdi:Traslado Base="127.59" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="20.41" />
+    </cfdi:Traslados>
+  </cfdi:Impuestos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd" Version="1.1" UUID="e6e09941-a6fb-9389-3441-73b97f26f1fd" FechaTimbrado="2026-09-02T08:21:24" RfcProvCertif="QSO100827UB0" SelloCFD="ANONIMIZADO" NoCertificadoSAT="00001000000716475473" SelloSAT="ANONIMIZADO" />
+  </cfdi:Complemento>
+</cfdi:Comprobante>

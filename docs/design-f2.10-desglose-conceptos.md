@@ -37,7 +37,8 @@ parser lee `ecc12` (no existe ni una mención en `src/`). Por eso:
 1. La columna `Combustible` dice "No": `84141602`/`E48` no es de la familia
    1510 (R8). Es lo correcto para la comisión, pero esconde la gasolina.
 2. **PT-Recibidas (F2.8) no ve esa gasolina ni su IVA.** Es un hueco fiscal
-   real que no se resuelve en esta fase (ver §7, pregunta P3).
+   real. Por decisión del dueño (P3) se cierra en esta fase, en la etapa 4
+   (§8), con el IVA como protagonista.
 
 Datos de cada línea del complemento (nombres oficiales tal cual, D25):
 `Identificador` (número de tarjeta, 5 tarjetas distintas por estado de
@@ -61,9 +62,11 @@ solo por clave falla.
 |---|---|---|
 | D49 | **El parser 4.0 captura el complemento `EstadoDeCuentaCombustible` como campo INTERNO** `data["EstadoCuentaCombustible"]`: un dict con el encabezado y una lista `Conceptos` de dicts, claves = nombres oficiales del XSD y `Traslados` como lista. Mismo contrato que `ConceptosDetalle` (D25): no va al Excel ni al visor y se excluye igual que `CFDI_Type`. **Aditivo**: ninguna columna existente cambia de valor, incluida `Combustible` | Sin esto no hay reporte. Respetar D25 deja que F4 lo guarde mañana sin volver a abrir XML (en F4 entra a `extras`/`conceptos.complemento`; si la cardinalidad lo pide, tabla propia como `pagos_doctos`, §14.4.5) |
 | D50 | **Modelo único "línea de desglose"**: TODO CFDI se aplana a líneas. Una factura normal da una línea por `Concepto`. Un CFDI con ECC da su(s) concepto(s) propios (la comisión, `origen=CFDI`) **más** una línea por carga (`origen=ECC`). El reporte nunca necesita saber si es Edenred, Walmart o Home Depot | Un solo motor sirve para el caso de uso genérico y para el monedero. Si mañana aparece otro complemento con detalle (vales de despensa, etc.), solo se agrega un "aplanador", sin tocar agregaciones ni exporter |
-| D51 | **Mes ancla del reporte = mes del CFDI** (`Fecha` del comprobante, igual que las carpetas de la bóveda y el PT). La `Fecha` de cada carga sale como columna informativa | Coherencia con la bóveda (cargas el mes X y ves el mes X) y con el PT. En las muestras, todas las cargas caen en el mes del CFDI. Pendiente de confirmar por el dueño (P1) |
+| D51 | **Mes ancla del reporte = mes del CFDI** (`Fecha` del comprobante, igual que las carpetas de la bóveda y el PT). La `Fecha` de cada carga sale como columna informativa | Coherencia con la bóveda (cargas el mes X y ves el mes X) y con el PT. En las muestras, todas las cargas caen en el mes del CFDI. **Confirmado por el dueño 2026-10-27 (P1)** |
 | D52 | **Reporte = archivo Excel APARTE** (`Desglose_<RFC>_<periodo>.xlsx` en `REPORTS_DIR`), con su propio botón. **El Excel principal no se toca** | D11: el Excel principal y sus hojas PT (D34) alimentan fórmulas INDEX/MATCH del dueño. Meter hojas de miles de filas ahí lo rompe o lo vuelve lento |
 | D53 | **Alcance = el lote cargado** (lo marcado en el árbol de la bóveda). "Por mes" o "por ejercicio" = marcar esos meses o usar el preset "Año completo". Jerarquía D21 intacta: un RFC y una dirección (default Recibidas). Sin SQLite (F4 pendiente) no se recorren carpetas por fuera del lote | Cero motor nuevo de búsqueda. Cuando llegue F4/F5 la misma capa pura recibe filas de la DB en lugar de `ProcessResult` |
+| D54 | **El IVA es protagonista del reporte** (P3, el dueño hará material de análisis con él). Hoja **IVA** propia en el Desglose (§3.3) que separa **siempre** el IVA del CFDI (p. ej. la comisión: $148.80) del IVA del complemento (la gasolina: $3,791.92). Nunca se suman en silencio: total = las dos columnas visibles | Si se mezclan, el lector no puede explicar de dónde salen $3,940.72 de IVA en una factura cuyo "Total" dice $1,078.80. Mismo principio que la columna NC visible de D33 |
+| D55 | **El ECC entra al PT-Recibidas (etapa 4), con compuerta fiscal.** Las cargas del complemento cuentan como gasto de combustible y su IVA como acreditable en el mes del CFDI (D51/D31: estado de cuenta PUE). Van en columnas **propias y visibles** del resumen mensual ("Combustible monedero" e "IVA combustible monedero"), no revueltas con las facturas normales. **Compuerta:** la etapa 4 NO se construye hasta que los fundamentos de §8.1 estén verificados TEXTUALMENTE en `fundamentos-legales` (regla §13.1 / D32). La etapa 1–3 no depende de esto | El dueño lo pidió explícitamente ("es parte del chiste"). La compuerta existe porque el PT emite semáforos de deducibilidad: una regla fiscal citada de memoria ahí es peor que no tenerla |
 
 ---
 
@@ -88,10 +91,15 @@ ui/results_view.py   menú contextual "Ver desglose de este XML"
 - Nueva función privada hermana de `_extract_conceptos_detalle`. Si no hay
   complemento, el campo vale `None` (no lista vacía), para distinguir "no
   aplica" de "venía vacío".
-- **Versión 1.1 (`ecc11`, namespace sin "12")**: los Edenred anteriores
-  podrían traerla. Se cubre solo si el dueño tiene esos XML (P4); no se
-  adivina su estructura, se audita contra el XSD como en §13.1.
-- Parser 3.3: igual, solo si P4 confirma XML de Edenred 3.3.
+- **Versión 1.1 (`ecc11`) y parser 3.3: FUERA de alcance.** El dueño no
+  tiene estados de cuenta anteriores (P4). Si algún día aparece uno, se
+  audita contra su XSD como en §13.1, sin adivinar su estructura. El aplanado
+  genérico de conceptos (D50) **NO** cubre hoy CFDI 3.3: verificado, el
+  parser 3.3 no produce `ConceptosDetalle` (solo lo hace el 4.0, F2.6). Un
+  CFDI 3.3 en el lote sale en la hoja Cuadre como "3.3 — sin detalle por
+  concepto" y no se inventan líneas. Agregar `ConceptosDetalle` al 3.3 es
+  una mini-ola aparte (con tag D20), y el XML 3.3 multi-concepto que el dueño
+  traerá de su otra computadora sería su fixture (anonimizado como §5).
 - Agregar `docs/ecc12.xsd` (fuente oficial del SAT) a la carpeta de
   referencia, como se hizo con los demás XSD (D23). Así se sabe qué significa
   cada código de `TipoCombustible` **leyendo el XSD, no de memoria**.
@@ -136,7 +144,12 @@ SAT con el formato "código - descripción" (D47):
 2. **Por proveedor**, 3. **Por mes**, 4. **Por ejercicio**, 5. **Por concepto**.
 6. **Combustible**: solo si hay líneas ECC. Tres bloques: por tipo, por
    tarjeta y por estación.
-7. **Cuadre**: solo los UUID que no cuadran, o la leyenda "Todos cuadran".
+7. **IVA** (D54), siempre presente. Por mes × proveedor, con columnas
+   **IVA del CFDI**, **IVA del complemento (combustible monedero)** e **IVA
+   total**, más base gravable y desglose por tasa (16% / 8% / 0% / exento,
+   mismo criterio que D48). Una fila de totales del periodo. Es la hoja
+   pensada para material de análisis: se lee sola, sin abrir las demás.
+8. **Cuadre**: solo los UUID que no cuadran, o la leyenda "Todos cuadran".
 
 Totales con fórmula `=SUBTOTAL(9, …)`: suman solo lo visible al filtrar.
 Nombre: `Desglose_<RFC>_<AAAA-MM>[_a_<AAAA-MM>].xlsx` derivado del lote,
@@ -163,16 +176,36 @@ mismo criterio que D29/F2.7.
 
 ## 4. Lo que F2.10 NO hace (el constructor no inventa alcance)
 
-- **No cambia el PT-Recibidas ni la columna `Combustible`** (ver P3).
+- **No cambia la columna `Combustible` del visor/Excel** (D11). El PT sí
+  cambia, pero solo en la etapa 4 y detrás de la compuerta de D55.
 - No detecta duplicados con facturas que la gasolinera haya emitido directo
-  al contribuyente. Queda como mejora: cruzar `rfc_estacion` + fecha +
-  importe contra las Recibidas del lote y marcar "posible duplicado".
+  al contribuyente en las etapas 1–3. La advertencia llega en la etapa 4
+  (§8.3).
 - No desglosa telepeaje por caseta: el XML no lo trae. Solo cruces × importe.
 - No consulta SQLite ni recorre carpetas fuera del lote (D53).
 
 ---
 
-## 5. Pruebas mínimas (fixtures = los 5 XML de Edenred + 1 multi-concepto)
+## 5. Pruebas mínimas
+
+**Fixtures YA anonimizados y comiteados** (P2) en `tests/fixtures/edenred/`,
+uno por UUID. **No van en `XML-Test/`**: `core.process_path` recorre esa
+carpeta de forma recursiva y cambiaría los conteos de `test_core` y
+compañía. Anonimización aplicada:
+
+| Dato | Reemplazo |
+|---|---|
+| RFC receptor | `GAGG010101000` (convención de `XML-Test/`) |
+| Nombre receptor | `RECEPTOR GASOLINA PRUEBA` |
+| DomicilioFiscalReceptor | `01000` |
+| `NumeroDeCuenta` (ECC) | `00000000000001` |
+| `Identificador` (tarjetas) | `9999000000000001`…`05`, **consistente entre archivos** (la misma tarjeta da el mismo número falso), así la agrupación por tarjeta sigue siendo probable |
+| `Sello`, `SelloCFD`, `SelloSAT`, `Certificado` | `ANONIMIZADO` (el parser los guarda pero no los valida) |
+
+Importes, fechas, UUID, RFC de gasolineras, litros y precios quedan
+**intactos**: son lo que se prueba. Falta un fixture multi-concepto tipo
+Walmart/Home Depot: o uno de `XML-Test/` con varios conceptos, o el 3.3
+que traerá el dueño.
 
 1. `3358E192`: 33 líneas ECC + 1 comisión; Σ importe ECC = 24,393.77;
    Σ IVA = 3,791.92; litros = 1,127.97; cuadre OK.
@@ -186,23 +219,67 @@ mismo criterio que D29/F2.7.
 
 ---
 
-## 6. Orden de construcción (3 commits, cada uno verde)
+## 6. Orden de construcción (4 commits, cada uno verde)
 
 1. **Parser** (tag primero) + pruebas 1, 2 y 5.
-2. **Capa pura + exporter** + pruebas 3, 4, 6 y 7, y botón en Reportes.
+2. **Capa pura + exporter (incluida la hoja IVA)** + pruebas 3, 4, 6 y 7, y
+   botón en Reportes.
 3. **Diálogo "Ver desglose de este XML"** en el visor.
+4. **ECC en PT-Recibidas** (D55): solo después de pasar la compuerta de §8.1.
 
 ---
 
-## 7. Preguntas abiertas para el dueño (no bloquean el paso 1)
+## 7. Respuestas del dueño (2026-10-27)
 
-- **P1** Mes ancla: ¿mes del CFDI (recomendado, D51) o mes de cada carga?
-- **P2** Fixtures: los XML traen tu RFC y nombre reales. ¿Se suben así a
-  `tests/fixtures/` o se anonimizan (RFC/nombre del receptor reemplazados,
-  sin tocar los importes)?
-- **P3** PT-Recibidas: ¿la gasolina del ECC debe entrar al IVA acreditable y
-  a la deducción? Antes de tocar el PT hay que **verificar textualmente** en
-  la RMF vigente la regla de comprobación de combustible con monedero
-  electrónico. No se cita de memoria (§13.1 / D32). Fase aparte.
-- **P4** ¿Tienes estados de cuenta de Edenred de años anteriores (CFDI 3.3 o
-  complemento `ecc11`)? Si sí, entran en el paso 1.
+- **P1** Mes ancla = **mes del CFDI** → D51 confirmada.
+- **P2** **Anonimizar** → hecho, ver §5.
+- **P3** **Sí**: el ECC entra al análisis fiscal y el IVA es central (el
+  dueño hará material con esto) → D54 y D55.
+- **P4** **No hay** XML antiguos de Edenred → `ecc11` y 3.3 fuera de alcance
+  (§3.1). El dueño puede traer de otra computadora un XML antiguo
+  multi-concepto (no gasolina): sirve como fixture del aplanado genérico.
+
+---
+
+## 8. Etapa 4 — ECC en el PT-Recibidas
+
+### 8.1 Compuerta fiscal: verificar TEXTUALMENTE antes de construir
+
+En `fundamentos-legales` (la carpeta de D32) se busca el texto vigente de
+cada punto y se cita literal en la hoja Fundamentos. Si un punto no se
+encuentra, **no se codifica como regla**: se muestra como "pendiente de
+verificar" en el semáforo.
+
+| # | Qué hay que encontrar escrito | Por qué importa |
+|---|---|---|
+| F1 | La regla de la RMF vigente que permite **comprobar el combustible pagado con monedero electrónico** mediante el estado de cuenta del emisor autorizado con el complemento `EstadoDeCuentaCombustible` | Sin ella, las cargas no son deducibles con ese CFDI. Es la base de toda la etapa |
+| F2 | Si ese pago con monedero **cumple el requisito de bancarización del combustible** (LISR 27-III párr. 2, ya citado en D32) | R2 del PT marca combustible no bancarizado como no deducible. El CFDI dice `FormaPago=03` pero paga la comisión, no la gasolina |
+| F3 | Si el **IVA de cada carga del complemento es acreditable** con ese CFDI y en qué mes | Es el número central del material del dueño. El mes propuesto (CFDI, D51) debe salir del texto, no de la intuición |
+| F4 | Si el requisito del **permiso de la Ley de Hidrocarburos** (D32) aplica aquí y cómo se cumple | El complemento trae `Rfc` y `ClaveEstacion` de la gasolinera, pero **no** el número de permiso. Podría ser un faltante real |
+
+### 8.2 Cambios al PT una vez pasada la compuerta (aditivos, D11)
+
+- `reports/pt_recibidas.py`: el CFDI con ECC sigue clasificándose por su
+  comisión como hoy. **Además** aporta las cargas como un monto aparte
+  ("combustible monedero") con su IVA. La clasificación de la comisión no
+  cambia.
+- Resumen mensual: dos columnas nuevas visibles, "Combustible monedero" e
+  "IVA combustible monedero", al lado de las actuales. **El IVA acreditable
+  total = columna actual + columna nueva**, con fórmula visible (D34: el PT
+  lleva fórmulas reales), nunca un número ya sumado.
+- Detalle: una fila por CFDI como hoy, con dos columnas nuevas (litros e
+  importe ECC). El renglón por carga vive en el Desglose, no en el PT.
+- Semáforo propio para el ECC según F1–F4: verde si todo está verificado,
+  amarillo "pendiente de verificar" si falta algún fundamento.
+- Pruebas: los dos estados de cuenta de los fixtures suman al resumen de su
+  mes exactamente lo de §1 ($24,393.77 + $3,791.92 en junio y $35,005.60 +
+  $5,441.49 en agosto). Además, el resumen de un lote sin ECC sale
+  **idéntico** al de antes (regresión).
+
+### 8.3 Riesgo de doble conteo (advertencia, no regla)
+
+Si la gasolinera **también** le facturó directo al contribuyente una carga
+pagada con monedero, el gasto aparecería dos veces. La etapa 4 agrega una
+advertencia en el detalle: Recibida cuyo emisor es un `rfc_estacion` del ECC
+con fecha e importe iguales a una carga → "posible duplicado con monedero".
+No resta nada automáticamente: el contador decide.
