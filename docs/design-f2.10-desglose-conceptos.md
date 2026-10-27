@@ -121,6 +121,13 @@ Reglas de aplanado:
   `tipo_comprobante="E"`, para que las sumas por proveedor sean netas. Tipo P
   y N **no entran** (no tienen conceptos de gasto).
 - Descuento 100% (etiqueta TAG): la línea entra con total 0, no se filtra.
+- **Impuestos locales (hallazgo de la etapa 2):** un CFDI con complemento
+  `implocal` (ej. ISH de un hotel: $2,689.60 + IVA $430.34 + ISH $80.69 =
+  $3,200.63) tiene un Total que NO es la suma de sus conceptos. El impuesto
+  local no cuelga de ningún concepto, así que entra como una **línea
+  explícita** "IMPUESTOS LOCALES (neto, no por concepto)", categoría
+  "Impuestos locales", con `total_linea` = trasladado local − retenido local.
+  Sin ella, el cuadre fallaba (verificado con `XML-Test/9A655B6C…`).
 
 **Agregaciones** (funciones puras que reciben la lista de líneas):
 
@@ -228,6 +235,35 @@ que traerá el dueño.
 4. **ECC en PT-Recibidas** (D55): solo después de pasar la compuerta de §8.1.
 
 ---
+
+## 6.1 Estado de construcción
+
+| Etapa | Estado |
+|---|---|
+| 1 Parser ECC | ✅ 2026-10-27 (tag `pre-f2.10-ecc`) |
+| 2 Capa pura + Excel + botón en Reportes | ✅ 2026-10-27 (`reports/desglose_conceptos.py`, `exporters/desglose_exporter.py`, `ui/desglose_dialog.py`). Pruebas verdes; **la parte Qt (botón y diálogo) NO se pudo ejecutar en el contenedor** (sin `libEGL`) y falta probarla en la máquina del dueño |
+| 3 Diálogo "Ver desglose de este XML" | Pendiente |
+| 4 ECC en PT-Recibidas | Pendiente (compuerta §8.1) |
+
+## 6.2 Cómo se consulta (aclaración pedida por el dueño, 2026-10-27)
+
+Ya estaba decidido en D53; aquí se pone completo para que no quede implícito:
+
+1. **No hay búsqueda nueva.** El reporte opera sobre el lote que ya está
+   cargado en la app, y ese lote se arma como siempre: Administrador de
+   Bóveda → árbol RFC / Emitidas·Recibidas / año / mes (casillas en meses,
+   presets de bimestre/trimestre/semestre/año completo) → Cargar.
+2. **Por mes** = marcar ese mes. **Por ejercicio** = preset "Año completo".
+   Las hojas "Por mes" y "Por ejercicio" ya traen la separación; no hace falta
+   cargar mes por mes.
+3. **Por proveedor** = combo del diálogo (los emisores que hay en el lote, con
+   su número de CFDI). Un RFC y una dirección a la vez (D21, jerarquía dura).
+4. **Por XML** = etapa 3 (clic derecho en el visor).
+5. **Lo que NO existe todavía:** buscar texto libre en los conceptos ("tornillo")
+   o consultar sin cargar el lote. Eso es F5 (SQLite + FTS5, D21/D24) y se
+   diseña ahí; esta fase deja la capa pura lista para recibir filas de la base
+   en lugar de `ProcessResult`. **No se requiere Opus para esto**: ya está
+   dentro del diseño existente.
 
 ## 7. Respuestas del dueño (2026-10-27)
 

@@ -31,11 +31,14 @@ import os
 from PySide6.QtCore import QThread, Slot
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
-    QFileDialog, QMainWindow, QMessageBox, QStackedWidget,
+    QDialog, QFileDialog, QMainWindow, QMessageBox, QStackedWidget,
 )
 
 from cfdi_app import core, paths, settings, vault
+from cfdi_app.exporters import desglose_exporter
+from cfdi_app.reports import desglose_conceptos
 from cfdi_app.ui.admin_boveda_page import AdminBovedaPage
+from cfdi_app.ui.desglose_dialog import DesgloseDialog
 from cfdi_app.ui.inicio_page import InicioPage
 from cfdi_app.ui.reportes_page import ReportesPage
 from cfdi_app.ui.state import AppState, widget_states_for
@@ -107,6 +110,7 @@ class MainWindow(QMainWindow):
         self.reportes_page = ReportesPage()
         self.reportes_page.go_home.connect(self.show_inicio_page)
         self.reportes_page.open_reports_folder.connect(self.on_open_reports_folder_clicked)
+        self.reportes_page.open_desglose.connect(self.on_desglose_clicked)
         self._stack.addWidget(self.reportes_page)
 
         # Alias para que el resto de la clase (logica preexistente, sin
@@ -225,7 +229,62 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def show_reportes_page(self):
+        self.reportes_page.set_desglose_available(
+            self._last_result is not None and self._last_result.has_data)
         self._stack.setCurrentIndex(PAGE_REPORTES)
+
+    @Slot()
+    def on_desglose_clicked(self):
+        """Desglose de conceptos (F2.10): opera sobre el lote ya cargado."""
+        if self._last_result is None or not self._last_result.has_data:
+            return
+        datos = self._last_result.all_parsed_data
+        lineas = desglose_conceptos.aplanar_lote(datos)
+        if not lineas:
+            QMessageBox.information(
+                self, APP_TITLE,
+                "El lote cargado no tiene facturas con conceptos "
+                "(solo hay pagos, nóminas u otros).")
+            return
+
+        dialog = DesgloseDialog(
+            desglose_conceptos.proveedores(lineas),
+            desglose_exporter.HOJAS_DISPONIBLES,
+            desglose_conceptos.hay_ecc(lineas),
+            desglose_exporter.HOJA_COMBUSTIBLE, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        rfc = dialog.selected_provider
+        filtradas = desglose_conceptos.filtrar_por_proveedor(lineas, rfc)
+        default_dir = settings.get_last_save_dir() or paths.REPORTS_DIR
+        default_path = os.path.join(
+            default_dir, desglose_conceptos.nombre_archivo(filtradas, rfc))
+        output_path, _ = QFileDialog.getSaveFileName(
+            self, "Guardar Desglose de conceptos", default_path,
+            "Archivos de Excel (*.xlsx)")
+        if not output_path:
+            self.append_log("Desglose cancelado por el usuario.")
+            return
+
+        try:
+            desglose_exporter.exportar_desglose(
+                datos, output_path, rfc_emisor=rfc,
+                hojas=dialog.selected_sheets)
+        except PermissionError:
+            QMessageBox.critical(
+                self, APP_TITLE,
+                "No se pudo guardar el Excel: el archivo está abierto en otro "
+                "programa (por ejemplo Excel). Ciérralo e intenta de nuevo.")
+            return
+        except Exception as exc:
+            QMessageBox.critical(
+                self, APP_TITLE, f"Error al exportar el desglose:\n{exc}")
+            return
+
+        self._last_saved_path = output_path
+        settings.set_last_save_dir(os.path.dirname(output_path))
+        self.append_log(f"\nDesglose guardado en: {output_path}")
 
     @Slot()
     def on_open_reports_folder_clicked(self):
