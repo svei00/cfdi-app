@@ -25,7 +25,10 @@ NAMESPACES_CFDI_40 = {
     # Even if not explicitly used, good to have if present
     'cce11': 'http://www.sat.gob.mx/ComercioExterior11',
     'xsi': 'http://www.w3.org/2001/XMLSchema-instance',
-    'pago20': 'http://www.sat.gob.mx/Pagos20'  # New namespace for Pagos 2.0
+    'pago20': 'http://www.sat.gob.mx/Pagos20',  # New namespace for Pagos 2.0
+    # F2.10 (D49): complemento Estado de Cuenta de Combustibles v1.2 (monederos
+    # tipo Edenred). Solo se lee su detalle por carga; ver parsers/xml_parser_40.
+    'ecc12': 'http://www.sat.gob.mx/EstadoDeCuentaCombustible12'
 }
 
 # --- MAPPING DICTIONARIES ---
@@ -354,6 +357,9 @@ INTERNAL_ONLY_FIELDS = [
     "DeduccionesDetalle",
     "OtrosPagosDetalle",
     "IncapacidadesDetalle",
+    # F2.10 (D49): detalle por carga del complemento EstadoDeCuentaCombustible
+    # (None si el CFDI no lo trae). Lo consume el reporte de Desglose.
+    "EstadoCuentaCombustible",
 ]
 
 

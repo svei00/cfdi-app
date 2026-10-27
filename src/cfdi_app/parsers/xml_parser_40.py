@@ -309,6 +309,58 @@ def _extract_conceptos_detalle(root, namespaces):
     return detalle
 
 
+def _extract_estado_cuenta_combustible(root, namespaces):
+    """
+    Captura el complemento EstadoDeCuentaCombustible 1.2 (F2.10, D49): el
+    detalle por CARGA de los monederos de combustible (Edenred y similares).
+    En esos CFDI el concepto del comprobante es solo la comision; la gasolina
+    real, su IVA y los litros viven aqui.
+
+    Devuelve None si el CFDI no trae el complemento (distingue "no aplica" de
+    "venia vacio"). Si lo trae, un dict con el encabezado y una lista
+    "Conceptos" de dicts; claves = nombres oficiales del complemento tal cual
+    (mismo contrato que _extract_conceptos_detalle, D25). Campo INTERNO.
+    """
+    ecc = root.find(".//ecc12:EstadoDeCuentaCombustible", namespaces)
+    if ecc is None:
+        return None
+
+    conceptos = []
+    for c in ecc.findall(
+            "ecc12:Conceptos/ecc12:ConceptoEstadoDeCuentaCombustible",
+            namespaces):
+        conceptos.append({
+            "Identificador": c.get("Identificador", "").strip(),
+            "Rfc": c.get("Rfc", "").strip(),
+            "ClaveEstacion": c.get("ClaveEstacion", "").strip(),
+            "TipoCombustible": c.get("TipoCombustible", "").strip(),
+            "NombreCombustible": c.get("NombreCombustible", "").strip(),
+            "FolioOperacion": c.get("FolioOperacion", "").strip(),
+            "Fecha": c.get("Fecha", "").strip(),
+            "Cantidad": c.get("Cantidad", "").strip(),
+            "Unidad": c.get("Unidad", "").strip(),
+            "ValorUnitario": c.get("ValorUnitario", "").strip(),
+            "Importe": c.get("Importe", "").strip(),
+            "Traslados": [
+                {
+                    "Impuesto": t.get("Impuesto", "").strip(),
+                    "TasaOCuota": t.get("TasaOCuota", "").strip(),
+                    "Importe": t.get("Importe", "").strip(),
+                }
+                for t in c.findall("ecc12:Traslados/ecc12:Traslado", namespaces)
+            ],
+        })
+
+    return {
+        "Version": ecc.get("Version", "").strip(),
+        "TipoOperacion": ecc.get("TipoOperacion", "").strip(),
+        "NumeroDeCuenta": ecc.get("NumeroDeCuenta", "").strip(),
+        "SubTotal": ecc.get("SubTotal", "").strip(),
+        "Total": ecc.get("Total", "").strip(),
+        "Conceptos": conceptos,
+    }
+
+
 def _extract_nomina_detalle(root, namespaces):
     """
     Detalle por-renglon de Nomina (D25/Sec.14.5): listas de dicts con claves
@@ -505,6 +557,10 @@ def parse_cfdi_40_invoice(xml_file_path):
         # Captura por-concepto completa (D25/Sec.14.5) - campo interno, ver
         # docstring de _extract_conceptos_detalle.
         data["ConceptosDetalle"] = _extract_conceptos_detalle(
+            root, NAMESPACES_CFDI_40)
+
+        # Detalle por carga de monederos de combustible (F2.10, D49) - interno.
+        data["EstadoCuentaCombustible"] = _extract_estado_cuenta_combustible(
             root, NAMESPACES_CFDI_40)
 
         # Extract and aggregate tax details
