@@ -109,6 +109,29 @@ def set_last_rfc(rfc):
     save(data)
 
 
+def get_last_load():
+    """Ultimo lote procesado CON datos (F2.10): ([carpetas], etiqueta legible).
+    Lo usa Reportes para ofrecer recargarlo sin pasar por la Boveda. Tolera un
+    settings.json editado a mano: lo que no tenga la forma esperada se ignora."""
+    raw = load().get("last_load")
+    if not isinstance(raw, dict):
+        return [], ""
+    folders = raw.get("folders")
+    if not isinstance(folders, list):
+        return [], ""
+    return ([f for f in folders if isinstance(f, str) and f],
+            str(raw.get("label") or ""))
+
+
+def set_last_load(folders, label):
+    folders = [f for f in (folders or []) if isinstance(f, str) and f]
+    if not folders:
+        return
+    data = load()
+    data["last_load"] = {"folders": folders, "label": str(label or "")}
+    save(data)
+
+
 def get_vault_root():
     """Ruta ACTIVA de la boveda (D39): la guardada si es un directorio valido,
     si no el default de paths.py. Unica fuente de verdad de la ruta activa -

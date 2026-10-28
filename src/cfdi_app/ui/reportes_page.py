@@ -88,16 +88,29 @@ class ReportesPage(QWidget):
         outer.addLayout(row)
         outer.addStretch(2)
 
-    def set_desglose_available(self, available):
-        """Indica si ya hay un lote procesado. El boton NUNCA se deshabilita:
-        un boton gris que no explica nada parece roto. Sin lote, un aviso
-        visible dice que hacer y, al pulsarlo, main_window ofrece ir a la
-        Boveda."""
+    def set_desglose_available(self, available, cargando=False,
+                               ultimo_periodo=""):
+        """Refleja el estado del lote en la pagina. El boton NUNCA se
+        deshabilita: un boton gris que no explica nada parece roto. Sin lote,
+        un aviso visible dice que hacer (y, si hay un periodo recordado, que
+        se cargara al pulsar)."""
         self.desglose_btn.setEnabled(True)
         self.desglose_btn.setToolTip(
             "Excel con una línea por concepto de cada CFDI del lote: por "
             "proveedor, mes, ejercicio y concepto, con hoja de IVA")
-        self.desglose_hint.setVisible(not available)
+        if available:
+            texto = ""
+        elif cargando:
+            texto = ("Cargando el periodo… en cuanto termine se abre el "
+                     "desglose.")
+        elif ultimo_periodo:
+            texto = (f"Sin periodo cargado. Último usado: {ultimo_periodo}. "
+                     "Al pulsar el botón te ofrezco cargarlo.")
+        else:
+            texto = ("Primero carga y procesa un periodo en el Administrador "
+                     "de Bóveda; después vuelve aquí.")
+        self.desglose_hint.setText(texto)
+        self.desglose_hint.setVisible(bool(texto))
 
     def _build_card(self):
         card = QFrame()
