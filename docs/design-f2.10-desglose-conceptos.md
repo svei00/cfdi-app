@@ -243,7 +243,7 @@ que traerá el dueño.
 | 1 Parser ECC | ✅ 2026-10-27 (tag `pre-f2.10-ecc`) |
 | 2 Capa pura + Excel + botón en Reportes | ✅ 2026-10-27 (`reports/desglose_conceptos.py`, `exporters/desglose_exporter.py`, `ui/desglose_dialog.py`). Pruebas verdes; **la parte Qt (botón y diálogo) NO se pudo ejecutar en el contenedor** (sin `libEGL`) y falta probarla en la máquina del dueño |
 | 3 Diálogo "Ver desglose de este XML" | ✅ 2026-10-28 (clic derecho en Facturas → `ui/desglose_xml_dialog.py`; helpers puros `tabla_xml`/`resumen_xml`/`texto_pie_xml`). Pruebas puras verdes; las de UI (`tests/test_f210_desglose_xml_ui.py`) se omiten en el contenedor y **faltan correrlas en la máquina del dueño** |
-| 4 ECC en PT-Recibidas | Pendiente (compuerta §8.1) |
+| 4 ECC en PT-Recibidas | 📐 Diseñada en detalle 2026-10-28 (§8, D56–D58); pendiente construcción. Verificación F1–F4 requiere sesión local |
 
 ## 6.2 Cómo se consulta (aclaración pedida por el dueño, 2026-10-27)
 
@@ -277,45 +277,127 @@ Ya estaba decidido en D53; aquí se pone completo para que no quede implícito:
 
 ---
 
-## 8. Etapa 4 — ECC en el PT-Recibidas
+## 8. Etapa 4 — ECC en el PT-Recibidas (diseño detallado 2026-10-28)
 
-### 8.1 Compuerta fiscal: verificar TEXTUALMENTE antes de construir
+### 8.0 Decisiones nuevas
 
-En `fundamentos-legales` (la carpeta de D32) se busca el texto vigente de
-cada punto y se cita literal en la hoja Fundamentos. Si un punto no se
-encuentra, **no se codifica como regla**: se muestra como "pendiente de
-verificar" en el semáforo.
-
-| # | Qué hay que encontrar escrito | Por qué importa |
+| # | Decisión | Por qué |
 |---|---|---|
-| F1 | La regla de la RMF vigente que permite **comprobar el combustible pagado con monedero electrónico** mediante el estado de cuenta del emisor autorizado con el complemento `EstadoDeCuentaCombustible` | Sin ella, las cargas no son deducibles con ese CFDI. Es la base de toda la etapa |
-| F2 | Si ese pago con monedero **cumple el requisito de bancarización del combustible** (LISR 27-III párr. 2, ya citado en D32) | R2 del PT marca combustible no bancarizado como no deducible. El CFDI dice `FormaPago=03` pero paga la comisión, no la gasolina |
-| F3 | Si el **IVA de cada carga del complemento es acreditable** con ese CFDI y en qué mes | Es el número central del material del dueño. El mes propuesto (CFDI, D51) debe salir del texto, no de la intuición |
-| F4 | Si el requisito del **permiso de la Ley de Hidrocarburos** (D32) aplica aquí y cómo se cumple | El complemento trae `Rfc` y `ClaveEstacion` de la gasolinera, pero **no** el número de permiso. Podría ser un faltante real |
+| D56 | **La compuerta fiscal se vuelve un DATO, no un bloqueo de construcción.** La etapa 4 se construye YA. Los cuatro fundamentos F1–F4 viven en una tabla `FUNDAMENTOS_ECC` de `pt_recibidas.py` con la cita en `None`. Mientras **alguna** cita sea `None`: las cifras del monedero **se muestran** en columnas propias con semáforo ámbar "pendiente de verificar fundamento", y **no se suman** al IVA acreditable. Cuando las cuatro tengan cita textual verificada, el semáforo pasa a verde y la fórmula del total las incluye. Llenar las citas es un cambio de 4 renglones, sin tocar lógica. Sustituye a la regla de D55 de "no construir hasta verificar" | El dueño quiere ver las cifras ya, para su material. La regla anti-alucinación (§13.1 / D32) sigue intacta: ninguna cita se escribe de memoria, y ningún número no verificado entra a un total fiscal. Esperar a la verificación para escribir código no protegía nada que esto no proteja |
+| D57 | **Forma de pago efectiva de las cargas = `05 - Monedero electrónico`**, bancarizada por catálogo (verificado en `docs/catalogos_filtrados.md`: código 5, columna Bancarizado = "Sí"). La `FormaPago=03` del CFDI es la de la **comisión**, no la de la gasolina, y no se usa para las cargas. Que el 05 cumpla LISR 27-III párr. 2 es justo F2: hasta verificarlo, ámbar | El catálogo sí está en el repo y se pudo verificar. El texto de la ley no. Se separan las dos cosas |
+| D58 | **Ninguna columna existente del PT cambia de valor, haya o no ECC en el lote.** `subtotal_neto`, `total_neto`, `iva_neto`, `iva_acreditable_estimado`, los buckets PUE/PPD y el estatus de la comisión salen idénticos. El monedero vive SOLO en columnas nuevas, más una fórmula de total que suma ambas a la vista | D11 y D54. Si `iva_acreditable_estimado` absorbiera el ECC, nadie podría reconstruir de dónde salió la cifra ni comparar contra un PT viejo |
 
-### 8.2 Cambios al PT una vez pasada la compuerta (aditivos, D11)
+### 8.1 Compuerta fiscal: qué hay que verificar y dónde
 
-- `reports/pt_recibidas.py`: el CFDI con ECC sigue clasificándose por su
-  comisión como hoy. **Además** aporta las cargas como un monto aparte
-  ("combustible monedero") con su IVA. La clasificación de la comisión no
-  cambia.
-- Resumen mensual: dos columnas nuevas visibles, "Combustible monedero" e
-  "IVA combustible monedero", al lado de las actuales. **El IVA acreditable
-  total = columna actual + columna nueva**, con fórmula visible (D34: el PT
-  lleva fórmulas reales), nunca un número ya sumado.
-- Detalle: una fila por CFDI como hoy, con dos columnas nuevas (litros e
-  importe ECC). El renglón por carga vive en el Desglose, no en el PT.
-- Semáforo propio para el ECC según F1–F4: verde si todo está verificado,
-  amarillo "pendiente de verificar" si falta algún fundamento.
-- Pruebas: los dos estados de cuenta de los fixtures suman al resumen de su
-  mes exactamente lo de §1 ($24,393.77 + $3,791.92 en junio y $35,005.60 +
-  $5,441.49 en agosto). Además, el resumen de un lote sin ECC sale
-  **idéntico** al de antes (regresión).
+Fuente: `fundamentos-legales` en la máquina del dueño (la carpeta de D32;
+el PT ya cita de ahí `RMF_2026-DOF-28122025.md`). **Desde la nube no hay
+acceso a esa carpeta**, y los portales fiscales están fuera de la red de la
+sesión. La verificación la hace una sesión local (Claude Desktop o
+`claude remote-control` en la PC del dueño) o el dueño sube el `.md` al repo.
 
-### 8.3 Riesgo de doble conteo (advertencia, no regla)
+| # | Qué hay que encontrar escrito | Pista para buscar (NO verificada) |
+|---|---|---|
+| F1 | La regla de la RMF vigente que permite **comprobar el combustible pagado con monedero electrónico** con el CFDI del emisor del monedero más el complemento `EstadoDeCuentaCombustible` | Buscar "monedero electrónico" en la RMF 2026. Fuentes secundarias apuntan a la sección 3.3.1: 3.3.1.6 (concepto) y la regla siguiente (comprobación). **La numeración cambia por año: confirmar contra el texto vigente** |
+| F2 | Que pagar con monedero **cumple la bancarización del combustible** (LISR 27-III párr. 2) | Mismo artículo ya citado en R2, más la regla de F1. Fuentes secundarias dicen que la LISR acepta monederos autorizados por el SAT como medio de pago del combustible |
+| F3 | Que el **IVA de cada carga es acreditable** con ese CFDI, y en **qué mes** | LIVA 5 (ya citado en R3) más la regla de F1. Fuentes secundarias dicen que el IVA "sigue la suerte de la deducción". El mes debe salir del texto: si no lo dice, se queda el mes del CFDI (D51) con nota |
+| F4 | Si el **permiso de la Ley de Hidrocarburos** (D32) aplica y cómo se cumple con monedero | El complemento trae `Rfc` y `ClaveEstacion`, **no** el número de permiso. Si la regla de F1 lo exime o lo da por cumplido con `ClaveEstacion`, citarlo. Si no, es un faltante real y el semáforo se queda ámbar con esa leyenda |
 
-Si la gasolinera **también** le facturó directo al contribuyente una carga
-pagada con monedero, el gasto aparecería dos veces. La etapa 4 agrega una
-advertencia en el detalle: Recibida cuyo emisor es un `rfc_estacion` del ECC
-con fecha e importe iguales a una carga → "posible duplicado con monedero".
-No resta nada automáticamente: el contador decide.
+Las pistas salen de una búsqueda web y no son fuente: sirven para saber qué
+buscar, nunca para citar.
+
+### 8.2 Contrato de construcción (`reports/pt_recibidas.py`, todo aditivo)
+
+**Constantes nuevas:**
+- `FORMA_MONEDERO = "05"` (D57).
+- `FUNDAMENTOS_ECC`: lista ordenada de `(id, criterio, cita)` para F1–F4,
+  con `cita=None` hasta verificar.
+- `ecc_fundamentado()`: `True` solo si las cuatro citas no son `None`.
+- Estatus nuevos, con su nivel en `ESTATUS_NIVEL`:
+  - `ESTATUS_ECC_DEDUCIBLE = "Combustible monedero: deducible"` (verde).
+  - `ESTATUS_ECC_PENDIENTE = "Combustible monedero: pendiente de verificar fundamento"` (ámbar).
+  - `ESTATUS_ECC_PROVISIONADO` y `ESTATUS_ECC_GENERICO` reusan la lógica de
+    la comisión: si la comisión es XAXX, las cargas son rojo "no deducible:
+    receptor genérico"; si es PPD sin REP, ámbar "provisionado".
+
+**`clasificar_recibida`** sigue igual para la comisión. Además agrega, con
+cero/`None` cuando no hay ECC:
+- `ecc_cargas` (int), `ecc_litros`, `ecc_importe_mxn`, `ecc_iva_mxn`,
+  `ecc_total_mxn`: sumas de `EstadoCuentaCombustible.Conceptos` × tipo de
+  cambio (mismo `_a_mxn`).
+- `ecc_estatus` / `ecc_nivel`: el estatus de la comisión manda si es
+  XAXX/provisionado. Si no, verde o ámbar según `ecc_fundamentado()`.
+- `ecc_iva_acreditable_mxn` = `ecc_iva_mxn` **solo** si `ecc_estatus` es
+  verde; en otro caso 0.
+
+**`construir_resumen_mensual`**: tres claves nuevas en
+`_fila_resumen_vacia`, todas en el **mes de emisión** (D51, PUE). Un ECC PPD
+seguiría a su REP como el resto (no hay caso real hoy, pero la regla ya
+existe en D31):
+- `combustible_monedero` = Σ `ecc_total_mxn` (con IVA, igual que los demás
+  buckets del resumen).
+- `iva_combustible_monedero` = Σ `ecc_iva_mxn` (siempre visible).
+- `iva_monedero_acreditable` = Σ `ecc_iva_acreditable_mxn` (0 mientras la
+  compuerta esté abierta).
+
+**Posible duplicado (§8.3), función pura `marcar_posibles_duplicados(detalle)`:**
+para cada fila del detalle cuyo `rfc_emisor` sea un `Rfc` de estación de
+alguna carga del lote, si `|total_mxn − (importe+IVA de la carga)| ≤ 0.05` y
+la fecha de emisión cae entre 0 y 31 días después de la `Fecha` de la carga,
+pone `posible_duplicado_monedero` = folio de la factura del monedero
+(`Factura` del CFDI con ECC). Es una advertencia: no cambia estatus ni resta.
+
+### 8.3 Contrato del exporter (`exporters/pt_exporter.py`)
+
+- **Resumen** (`_COLS_RESUMEN`), al final y en este orden:
+  "Combustible monedero", "IVA combustible monedero", "IVA monedero
+  acreditable" y **"IVA acreditable estimado + monedero"**. Esta última es
+  **fórmula viva** `=<col iva_acreditable_estimado> + <col iva_monedero_acreditable>`
+  (D34), nunca un valor ya sumado.
+- Encabezados ámbar con la nota "(pendiente de verificar fundamento)"
+  mientras `ecc_fundamentado()` sea `False`.
+- **Detalle** (`_COLS_DETALLE`), al final: "Cargas ECC", "Litros ECC",
+  "Importe ECC", "IVA ECC", "Estatus ECC" (con el color de `ecc_nivel`) y
+  "Posible duplicado monedero".
+- **Fundamentos**: cuatro renglones F1–F4. La cita verificada si existe; si
+  no, el texto literal "PENDIENTE DE VERIFICAR — no se cita de memoria (F2.10
+  §8.1)". Más una nota: "La deducción de automóviles con tope (LISR 36) y el
+  IEPS del combustible NO se calculan en este PT".
+- Columnas ECC visibles aunque el lote no tenga ECC (todas en 0). Así el
+  layout del PT es estable y las fórmulas INDEX/MATCH del dueño no cambian de
+  columna según el mes.
+
+### 8.4 Pruebas obligatorias
+
+1. **Regresión D58:** con los fixtures de `XML-Test/` y con los de Edenred,
+   todas las claves que ya existían en resumen y detalle valen **exactamente
+   lo mismo** que en el tag/commit anterior a la etapa 4. Mismo método de
+   comparación que en la etapa 1: correr las dos versiones y comparar.
+2. Junio: `combustible_monedero` = 28,185.69 e `iva_combustible_monedero` =
+   3,791.92. Agosto: 40,447.09 y 5,441.49.
+3. Con la compuerta abierta (citas `None`): `iva_monedero_acreditable` = 0,
+   `ecc_estatus` ámbar, y la fórmula del Excel suma 0.
+4. Con las cuatro citas parcheadas en la prueba (monkeypatch de
+   `FUNDAMENTOS_ECC`): `iva_monedero_acreditable` = `iva_combustible_monedero`
+   y el estatus es verde. **El código de producción NO se parchea.**
+5. Comisión XAXX → cargas rojo genérico. Comisión PPD sin REP → cargas ámbar
+   provisionado.
+6. Duplicado: un CFDI sintético de la estación `OMC100818GZ7` por $1,445.88,
+   emitido el 2026-06-25 → marcado con `TCGE-000004231229`. El mismo con
+   $1,445.00 o emitido 40 días después → no marcado.
+7. Excel: existen las columnas nuevas, la celda de total es fórmula
+   (empieza con `=`), y la hoja Fundamentos dice "PENDIENTE DE VERIFICAR" ×4.
+
+### 8.5 Fuera de alcance (no inventar)
+
+- Tope de deducción de automóviles y proporción del IVA (LISR 36): requiere
+  datos del vehículo que el CFDI no trae.
+- IEPS del combustible: el complemento de las muestras no lo desglosa.
+- Conciliación contra el estado de cuenta bancario (D22).
+
+### 8.6 Orden de construcción
+
+1. Tag `pre-f2.10-etapa4` (D20: toca el PT).
+2. `pt_recibidas.py` + pruebas 1 a 6.
+3. `pt_exporter.py` + prueba 7.
+4. Verificación F1–F4 en sesión local. Si pasa, llenar las 4 citas en
+   `FUNDAMENTOS_ECC`. Ese es el único cambio para pasar a verde.
