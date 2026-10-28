@@ -62,6 +62,22 @@ _DISCLAIMER = (
     "declara la forma de pago, solo el estado de cuenta bancario la confirma."
 )
 
+_NOTAS_ECC = [
+    "Mientras algún fundamento F1–F4 esté pendiente, las cifras del monedero "
+    "se muestran pero NO se suman al IVA acreditable (columna 'IVA monedero "
+    "acreditable' = 0).",
+    "El monedero se ancla al mes de EMISIÓN del CFDI (decisión del dueño). La "
+    "regla 3.3.1.7 permite deducir y acreditar 'hasta que' se cuente con el "
+    "CFDI y el complemento: revise la columna 'Mes de timbrado (ECC)', "
+    "resaltada cuando el timbrado cae en otro mes que la emisión.",
+    "No se calcula el tope de deducción de automóviles (LISR art. 36) ni el "
+    "IEPS del combustible.",
+    "'Posible duplicado monedero' es solo una advertencia: la regla 3.3.1.7 "
+    "dice que las estaciones no deben emitir CFDI por operaciones con "
+    "monedero; una factura de estación por el mismo importe puede duplicar el "
+    "gasto.",
+]
+
 # Colores de semaforo = los estandar de Excel (Bueno/Malo/Neutral).
 _FILL_VERDE = PatternFill("solid", fgColor="C6EFCE")
 _FILL_ROJO = PatternFill("solid", fgColor="FFC7CE")
@@ -96,7 +112,17 @@ _COLS_RESUMEN = [
     ("iva_neto", "IVA neto"),
     ("total_neto", "Total neto"),
     ("iva_acreditable_estimado", "IVA acreditable estimado"),
+    # F2.10 etapa 4 (D58): el monedero va SOLO en columnas nuevas, al final.
+    ("combustible_monedero", "Combustible monedero"),
+    ("iva_combustible_monedero", "IVA combustible monedero"),
+    ("iva_monedero_acreditable", "IVA monedero acreditable"),
 ]
+# Columna de FORMULA VIVA (D34/D58): suma las dos columnas a la vista, nunca
+# un numero ya sumado. Se escribe a continuacion de las de _COLS_RESUMEN.
+_TITULO_IVA_CON_MONEDERO = "IVA acreditable estimado + monedero"
+_CLAVES_MONEDERO_RESUMEN = ("combustible_monedero", "iva_combustible_monedero",
+                            "iva_monedero_acreditable")
+_NOTA_PENDIENTE = " (pendiente de verificar fundamento)"
 
 # Columnas del detalle: (clave en el registro clasificado, encabezado, moneda?).
 _COLS_DETALLE = [
@@ -115,7 +141,16 @@ _COLS_DETALLE = [
     ("total_mxn", "Total MXN", True),
     ("estatus", "Estatus", False),
     ("conciliado", "Conciliado banco", False),
+    # F2.10 etapa 4: monedero, al final para no mover las columnas de arriba.
+    ("ecc_cargas", "Cargas ECC", False),
+    ("ecc_litros", "Litros ECC", False),
+    ("ecc_importe_mxn", "Importe ECC MXN", True),
+    ("ecc_iva_mxn", "IVA ECC MXN", True),
+    ("ecc_estatus", "Estatus ECC", False),
+    ("mes_timbrado_txt", "Mes de timbrado (ECC)", False),
+    ("posible_duplicado_monedero", "Posible duplicado monedero", False),
 ]
+_COL_ESTATUS_ECC = 20  # posicion 1-indexed de "Estatus ECC" en el detalle
 _COL_TOTAL_MXN = 13   # posicion 1-indexed de "Total MXN" en el detalle
 _COL_IVA_MXN = 12
 _COL_CONCILIADO = 15  # posicion 1-indexed de "Conciliado banco"
@@ -144,29 +179,47 @@ def _autoajustar(ws, num_cols, ancho_max=48):
 
 
 def _escribir_resumen(ws, resumen):
-    ws.append([titulo for _, titulo in _COLS_RESUMEN])
-    _estilo_encabezado(ws, len(_COLS_RESUMEN))
+    n_pure = len(_COLS_RESUMEN)
+    n_cols = n_pure + 1  # + columna de formula viva
+    claves = [c for c, _ in _COLS_RESUMEN]
+    letra_iva = get_column_letter(claves.index("iva_acreditable_estimado") + 1)
+    letra_mon = get_column_letter(claves.index("iva_monedero_acreditable") + 1)
+
+    titulos = [titulo for _, titulo in _COLS_RESUMEN]
+    pendiente = not pt.ecc_fundamentado()
+    if pendiente:
+        # Solo la columna que depende de la verificacion lleva la nota.
+        i = claves.index("iva_monedero_acreditable")
+        titulos[i] += _NOTA_PENDIENTE
+    ws.append(titulos + [_TITULO_IVA_CON_MONEDERO])
+    _estilo_encabezado(ws, n_cols)
+    if pendiente:
+        for clave in _CLAVES_MONEDERO_RESUMEN:
+            celda = ws.cell(row=1, column=claves.index(clave) + 1)
+            celda.fill = PatternFill("solid", fgColor="9C6500")
 
     for fila in resumen:
-        ws.append([fila[clave] for clave, _ in _COLS_RESUMEN])
+        r = ws.max_row + 1
+        ws.append([fila[clave] for clave in claves]
+                  + [f"={letra_iva}{r}+{letra_mon}{r}"])
 
     # Formato de moneda a todas las columnas numericas (todas menos "Mes").
     for row in range(2, ws.max_row + 1):
-        for col in range(2, len(_COLS_RESUMEN) + 1):
+        for col in range(2, n_cols + 1):
             ws.cell(row=row, column=col).number_format = _MONEDA
 
     # Fila de totales con SUM vivo (cuadre §17.9.1 visible en el propio Excel).
     if resumen:
         total_row = ws.max_row + 1
         ws.cell(row=total_row, column=1, value="TOTAL").font = Font(bold=True)
-        for col in range(2, len(_COLS_RESUMEN) + 1):
+        for col in range(2, n_cols + 1):
             letra = get_column_letter(col)
             celda = ws.cell(row=total_row, column=col,
                             value=f"=SUM({letra}2:{letra}{ws.max_row})")
             celda.number_format = _MONEDA
             celda.font = Font(bold=True)
 
-    _autoajustar(ws, len(_COLS_RESUMEN))
+    _autoajustar(ws, n_cols)
 
 
 def _escribir_detalle(ws, detalle):
@@ -190,6 +243,14 @@ def _escribir_detalle(ws, detalle):
             "total_mxn": reg["total_mxn"],
             "estatus": reg["estatus"],
             "conciliado": "",  # el usuario marca ✓ a mano
+            "ecc_cargas": reg["ecc_cargas"],
+            "ecc_litros": reg["ecc_litros"],
+            "ecc_importe_mxn": reg["ecc_importe_mxn"],
+            "ecc_iva_mxn": reg["ecc_iva_mxn"],
+            "ecc_estatus": reg["ecc_estatus"],
+            "mes_timbrado_txt": (pt._mes_clave(reg["mes_timbrado"])
+                                 if reg["ecc_cargas"] else ""),
+            "posible_duplicado_monedero": reg["posible_duplicado_monedero"],
         }
         ws.append([vista[clave] for clave, _, _ in _COLS_DETALLE])
 
@@ -199,6 +260,13 @@ def _escribir_detalle(ws, detalle):
         celda_estatus = ws.cell(row=fila, column=14)
         celda_estatus.fill = fill
         celda_estatus.font = font
+        if reg["ecc_nivel"]:
+            fill_e, font_e = _SEMAFORO[reg["ecc_nivel"]]
+            celda_ecc = ws.cell(row=fila, column=_COL_ESTATUS_ECC)
+            celda_ecc.fill = fill_e
+            celda_ecc.font = font_e
+        if reg["ecc_timbrado_otro_mes"]:  # F3: el contador debe verlo
+            ws.cell(row=fila, column=_COL_ESTATUS_ECC + 1).fill = _FILL_AMBAR
         # Formato de moneda en las columnas de importe.
         for col, _, es_moneda in [(i + 1, t, m) for i, (_, t, m) in enumerate(_COLS_DETALLE)]:
             if es_moneda:
@@ -272,6 +340,29 @@ def _escribir_fundamentos(ws):
         ws.cell(row=fila, column=2).alignment = Alignment(wrap_text=True, vertical="top")
         ws.cell(row=fila, column=3).alignment = Alignment(wrap_text=True, vertical="top")
 
+    # F2.10 etapa 4: combustible con monedero electronico. La cita se muestra
+    # tal cual esta verificada; si no, el texto literal de pendiente.
+    ws.append([])
+    ws.append(["Combustible con monedero electrónico (F2.10 etapa 4)"])
+    ws.cell(row=ws.max_row, column=1).font = Font(bold=True)
+    for fid, criterio, cita in pt.FUNDAMENTOS_ECC:
+        ws.append([fid, criterio,
+                   cita or "PENDIENTE DE VERIFICAR — no se cita de memoria "
+                           "(F2.10 diseño §8.1)"])
+        fila = ws.max_row
+        ws.cell(row=fila, column=1).font = Font(bold=True)
+        for col in (2, 3):
+            ws.cell(row=fila, column=col).alignment = Alignment(
+                wrap_text=True, vertical="top")
+        if cita is None:
+            ws.cell(row=fila, column=3).fill = _FILL_AMBAR
+    for nota in _NOTAS_ECC:
+        ws.append(["Nota", nota])
+        fila = ws.max_row
+        ws.cell(row=fila, column=1).font = Font(bold=True)
+        ws.cell(row=fila, column=2).alignment = Alignment(wrap_text=True, vertical="top")
+        ws.merge_cells(start_row=fila, start_column=2, end_row=fila, end_column=3)
+
     ws.append([])
     fila_disc = ws.max_row + 1
     ws.cell(row=fila_disc, column=1, value="Aviso:").font = Font(bold=True, color="9C0006")
@@ -281,7 +372,7 @@ def _escribir_fundamentos(ws):
 
     ws.column_dimensions["A"].width = 8
     ws.column_dimensions["B"].width = 70
-    ws.column_dimensions["C"].width = 48
+    ws.column_dimensions["C"].width = 90
 
 
 def escribir_hojas_pt_recibidas(workbook, invoice_data_list, pagos_data_list):
