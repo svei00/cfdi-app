@@ -243,7 +243,7 @@ que traerá el dueño.
 | 1 Parser ECC | ✅ 2026-10-27 (tag `pre-f2.10-ecc`) |
 | 2 Capa pura + Excel + botón en Reportes | ✅ 2026-10-27 (`reports/desglose_conceptos.py`, `exporters/desglose_exporter.py`, `ui/desglose_dialog.py`). Pruebas verdes; **la parte Qt (botón y diálogo) NO se pudo ejecutar en el contenedor** (sin `libEGL`) y falta probarla en la máquina del dueño |
 | 3 Diálogo "Ver desglose de este XML" | ✅ 2026-10-28 (clic derecho en Facturas → `ui/desglose_xml_dialog.py`; helpers puros `tabla_xml`/`resumen_xml`/`texto_pie_xml`). Pruebas puras verdes; las de UI (`tests/test_f210_desglose_xml_ui.py`) se omiten en el contenedor y **faltan correrlas en la máquina del dueño** |
-| 4 ECC en PT-Recibidas | 📐 Diseñada en detalle 2026-10-28 (§8, D56–D58); pendiente construcción. Verificación F1–F4 requiere sesión local |
+| 4 ECC en PT-Recibidas | ✅ 2026-10-28 (`reports/pt_recibidas.py`, `exporters/pt_exporter.py`, tag `pre-f2.10-etapa4`). F1 y F3 verificados con el texto oficial de la regla 3.3.1.7; **F2 y F4 siguen pendientes**, así que el IVA del monedero se muestra pero no se suma |
 
 ## 6.2 Cómo se consulta (aclaración pedida por el dueño, 2026-10-27)
 
@@ -401,3 +401,36 @@ pone `posible_duplicado_monedero` = folio de la factura del monedero
 3. `pt_exporter.py` + prueba 7.
 4. Verificación F1–F4 en sesión local. Si pasa, llenar las 4 citas en
    `FUNDAMENTOS_ECC`. Ese es el único cambio para pasar a verde.
+
+### 8.7 Resultado de la verificación (2026-10-28)
+
+El dueño pegó el texto oficial de las reglas **3.3.1.6** (concepto de monedero
+electrónico) y **3.3.1.7** (deducción de combustibles con monedero) de la RMF
+2026, copiado de la página del SAT. Se registró como cita en
+`FUNDAMENTOS_ECC` marcado como "texto proporcionado por el dueño; cotejar con
+el DOF para dictamen".
+
+| # | Resultado | Qué dice el texto |
+|---|---|---|
+| F1 | ✅ Verificado | 3.3.1.7 párr. 1: la comisión se comprueba con el CFDI y el pago de los combustibles con el complemento de estado de cuenta; las estaciones no emiten CFDI al cliente por esas operaciones |
+| F2 | ⏳ Pendiente | Las reglas se emiten "para los efectos del 27-III primer y segundo párrafos", pero **no dicen** textualmente que pagar con monedero sea pago bancarizado. Falta el texto de la LISR 27-III párr. 2 |
+| F3 | ✅ Verificado (con matiz) | 3.3.1.7 párr. 2: la deducción y el acreditamiento proceden "hasta que… cuente con el CFDI y el complemento… y hasta por el monto que ampare el citado complemento" |
+| F4 | ⏳ Pendiente | El texto no menciona el permiso de la Ley de Hidrocarburos |
+
+**Consecuencia:** `ecc_fundamentado()` sigue en `False` (exige F1–F4). El IVA
+del monedero se muestra ($3,791.92 en junio, $5,441.49 en agosto) y la columna
+"IVA monedero acreditable" vale 0. Para pasar a verde solo hay que reemplazar
+los dos `None` de `FUNDAMENTOS_ECC` (F2 y F4) por su cita textual, y actualizar
+la prueba `test_f1_y_f3_citan_la_regla_3_3_1_7_y_f2_f4_siguen_pendientes`.
+
+**Matiz de F3 (hallazgo, decisión del dueño pendiente):** los dos estados de
+cuenta de las muestras se emiten el último día del mes y se **timbran al día
+siguiente** (junio: emitido 30/06, timbrado 01/07; agosto: 31/08 → 01/09). La
+regla permite acreditar "hasta que" se cuente con el CFDI y el complemento. El
+PT sigue anclando al mes de emisión (P1, decisión del dueño), pero muestra la
+columna "Mes de timbrado (ECC)" resaltada cuando difiere. Qué mes usar para el
+acreditamiento es criterio fiscal; no se asume.
+
+**Efecto en §8.3:** la regla confirma que la estación **no** debe emitir CFDI
+por operaciones con monedero, lo que respalda la advertencia de posible
+duplicado.

@@ -59,6 +59,63 @@ UMBRAL_BANCARIZACION = 2000.0
 # si su ClaveProdServ (8 digitos) empieza con esta familia (4 digitos).
 FAMILIA_COMBUSTIBLE = "1510"
 
+# F2.10 etapa 4 (D57): forma de pago efectiva de las CARGAS de un estado de
+# cuenta de combustible de monedero = "05 - Monedero electronico" (bancarizada
+# por catalogo, docs/catalogos_filtrados.md). La FormaPago del CFDI del emisor
+# del monedero (p. ej. "03") es la de la COMISION, no la de la gasolina.
+FORMA_MONEDERO = "05"
+
+_FUENTE_RMF_3317 = ("RMF 2026, regla 3.3.1.7 (texto oficial proporcionado por "
+                    "el dueño el 2026-10-28 desde la pagina del SAT; cotejar "
+                    "con el DOF para dictamen)")
+
+# Fundamentos de la etapa 4 (F2.10 diseño §8.1, D56). `cita` None = PENDIENTE
+# DE VERIFICAR: ninguna cita se escribe de memoria (§13.1 / D32). Mientras
+# ALGUNA cita sea None, las cifras del monedero se MUESTRAN pero NO se suman al
+# IVA acreditable (semaforo ambar). Llenar la cita es el unico cambio que hace
+# falta para pasar a verde.
+#   (id, criterio, cita)
+FUNDAMENTOS_ECC = [
+    ("F1",
+     "El combustible adquirido con monedero electrónico autorizado por el SAT "
+     "se comprueba con el CFDI y el complemento de estado de cuenta de "
+     "combustibles del emisor del monedero; las estaciones de servicio no "
+     "emiten CFDI al cliente por esas operaciones.",
+     _FUENTE_RMF_3317 + ", párr. 1: \"…podrán comprobar la erogación de las "
+     "comisiones y otros cargos que cobre el emisor del monedero electrónico "
+     "por sus servicios, así como el pago por la adquisición de combustibles, "
+     "con el CFDI y el complemento de estado de cuenta de combustibles para "
+     "monederos electrónicos autorizados por el SAT, respectivamente…, por lo "
+     "que las estaciones de servicio no deberán emitir el CFDI a los clientes "
+     "adquirentes de combustibles, por las operaciones que se realicen a "
+     "través de monederos electrónicos autorizados por el SAT.\""),
+    ("F2",
+     "El pago con monedero electrónico cumple el requisito de pago bancarizado "
+     "del combustible (LISR art. 27, fr. III, párr. 2).",
+     None),  # La regla 3.3.1.6/3.3.1.7 se emite "para los efectos del 27-III
+             # primer y segundo párrafos", pero NO dice textualmente que el
+             # monedero sea medio de pago bancarizado: falta el texto de la ley.
+    ("F3",
+     "La deducción y el acreditamiento de los impuestos trasladados proceden "
+     "hasta contar con el CFDI y el complemento, y hasta por el monto que "
+     "ampare el complemento.",
+     _FUENTE_RMF_3317 + ", párr. 2: \"La deducción por la adquisición de "
+     "combustibles, así como el acreditamiento de los impuestos trasladados "
+     "podrá realizarse hasta que el contribuyente adquirente del combustible, "
+     "cuente con el CFDI y el complemento a que se refiere el párrafo anterior "
+     "y hasta por el monto que ampare el citado complemento.\""),
+    ("F4",
+     "Requisito del permiso de la Ley de Hidrocarburos para deducir "
+     "combustible (D32) y cómo se cumple con monedero.",
+     None),  # El texto de la regla 3.3.1.7 no lo menciona.
+]
+
+
+def ecc_fundamentado():
+    """True solo si TODOS los fundamentos F1-F4 tienen cita verificada."""
+    return all(cita is not None for _, _, cita in FUNDAMENTOS_ECC)
+
+
 # --- Estatus de deducibilidad (para el semaforo del detalle) ---------------
 # El color lo aplica el exporter; aqui solo se nombra el estatus y su nivel.
 
@@ -68,6 +125,12 @@ ESTATUS_NO_DED_COMBUSTIBLE = "No deducible: combustible en efectivo"
 ESTATUS_NO_DED_EFECTIVO = "No deducible: efectivo > $2,000"
 ESTATUS_PROVISIONADO = "Provisionado: PPD sin REP en el lote"
 ESTATUS_INDETERMINADO = "Indeterminado: forma de pago 99"
+
+# Estatus de las CARGAS de un estado de cuenta de monedero (F2.10 etapa 4).
+# Si la comision del CFDI es XAXX o PPD sin REP, las cargas heredan ese estatus.
+ESTATUS_ECC_DEDUCIBLE = "Combustible monedero: deducible"
+ESTATUS_ECC_PENDIENTE = (
+    "Combustible monedero: pendiente de verificar fundamento")
 
 # Nivel de semaforo por estatus (el exporter traduce a color).
 NIVEL_VERDE = "verde"
@@ -81,6 +144,8 @@ ESTATUS_NIVEL = {
     ESTATUS_NO_DED_EFECTIVO: NIVEL_ROJO,
     ESTATUS_PROVISIONADO: NIVEL_AMBAR,
     ESTATUS_INDETERMINADO: NIVEL_AMBAR,
+    ESTATUS_ECC_DEDUCIBLE: NIVEL_VERDE,
+    ESTATUS_ECC_PENDIENTE: NIVEL_AMBAR,
 }
 
 
@@ -135,6 +200,37 @@ def es_combustible(conceptos_detalle):
 
 
 # --- Determinacion del sujeto del lote -------------------------------------
+
+def _ecc_totales(factura, tc):
+    """Sumas de las cargas del complemento EstadoDeCuentaCombustible, en MXN.
+    Todo en cero si el CFDI no lo trae."""
+    ecc = factura.get("EstadoCuentaCombustible") or {}
+    cargas = ecc.get("Conceptos") or []
+    importe = iva = litros = 0.0
+    for c in cargas:
+        importe += _num(c.get("Importe"))
+        litros += _num(c.get("Cantidad"))
+        iva += sum(_num(t.get("Importe")) for t in (c.get("Traslados") or [])
+                   if t.get("Impuesto") in ("IVA", "002"))
+    return {
+        "ecc_cargas": len(cargas),
+        "ecc_litros": round(litros, 2),
+        "ecc_importe_mxn": _a_mxn(importe, tc),
+        "ecc_iva_mxn": _a_mxn(iva, tc),
+        "ecc_total_mxn": _a_mxn(importe + iva, tc),
+    }
+
+
+def _estatus_ecc(estatus_comision, cargas):
+    """Estatus de las cargas. Heredan los bloqueos de la comision (receptor
+    generico, PPD sin REP: el CFDI entero esta en esa situacion); si no, verde
+    solo cuando F1-F4 estan verificados, ambar mientras falte alguno."""
+    if not cargas:
+        return ""
+    if estatus_comision in (ESTATUS_NO_DED_GENERICO, ESTATUS_PROVISIONADO):
+        return estatus_comision
+    return ESTATUS_ECC_DEDUCIBLE if ecc_fundamentado() else ESTATUS_ECC_PENDIENTE
+
 
 def _partes(cfdi):
     """RFCs (emisor y receptor) que intervienen en un CFDI, sin importar el
@@ -243,9 +339,15 @@ def clasificar_recibida(factura, indice_pagos):
         receptor=receptor, metodo=metodo, forma_efectiva=forma_efectiva,
         tiene_rep=tiene_rep, total_mxn=total_mxn, combustible=combustible)
 
+    ecc = _ecc_totales(factura, tc)
+    ecc_estatus = _estatus_ecc(estatus, ecc["ecc_cargas"])
+    ecc_nivel = ESTATUS_NIVEL[ecc_estatus] if ecc_estatus else ""
+    mes_emision = _mes_de(factura.get("Fecha Emision"))
+    mes_timbrado = _mes_de(factura.get("Fecha Timbrado"))
+
     return {
         "uuid": uuid,
-        "mes": _mes_de(factura.get("Fecha Emision")),
+        "mes": mes_emision,
         "fecha_emision": factura.get("Fecha Emision"),
         "rfc_emisor": factura.get("RFC Emisor"),
         "nombre_emisor": factura.get("Nombre Emisor"),
@@ -261,6 +363,22 @@ def clasificar_recibida(factura, indice_pagos):
         "pagos": pagos,
         "estatus": estatus,
         "nivel": ESTATUS_NIVEL[estatus],
+        # --- F2.10 etapa 4 (D58: solo claves NUEVAS; ninguna anterior cambia)
+        "factura": factura.get("Factura") or "",
+        **ecc,
+        "ecc_estatus": ecc_estatus,
+        "ecc_nivel": ecc_nivel,
+        # El IVA del monedero solo cuenta como acreditable con fundamento
+        # completo (D56); mientras tanto se muestra pero no se suma.
+        "ecc_iva_acreditable_mxn": (
+            ecc["ecc_iva_mxn"] if ecc_estatus == ESTATUS_ECC_DEDUCIBLE else 0.0),
+        "mes_timbrado": mes_timbrado,
+        # F3: "hasta que cuente con el CFDI y el complemento" - si el timbrado
+        # cae en otro mes que la emision, el contador debe verlo.
+        "ecc_timbrado_otro_mes": bool(
+            ecc["ecc_cargas"] and mes_timbrado and mes_emision
+            and mes_timbrado != mes_emision),
+        "posible_duplicado_monedero": "",
     }
 
 
@@ -357,7 +475,58 @@ def construir_detalle(parsed_data_list, rfc_sujeto=None, pagos_data=None):
                       if d.get("CFDI_Type") == "Pago"]
     indice = indexar_pagos_por_uuid(pagos_data)
     facturas, _ = separar_recibidas(parsed_data_list, rfc_sujeto)
-    return [clasificar_recibida(f, indice) for f in facturas]
+    detalle = [clasificar_recibida(f, indice) for f in facturas]
+    marcar_posibles_duplicados(detalle, facturas)
+    return detalle
+
+
+# --- Posible duplicado con un estado de cuenta de monedero (§8.3) ----------
+
+TOLERANCIA_DUPLICADO = 0.05
+VENTANA_DUPLICADO_DIAS = 31
+
+
+def _fecha_carga(texto):
+    try:
+        return datetime.strptime(str(texto)[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def marcar_posibles_duplicados(detalle, facturas):
+    """Advertencia, NO regla (§8.3): la regla 3.3.1.7 dice que las estaciones
+    no deben emitir CFDI a quien compra con monedero. Si el detalle trae una
+    factura de una estacion que aparece en las cargas de un estado de cuenta,
+    por el mismo total (+-0.05) y emitida 0 a 31 dias despues de la carga, se
+    marca con el folio del estado de cuenta. No cambia estatus ni resta nada:
+    el contador decide."""
+    cargas = []
+    for f in facturas:
+        tc = f.get("Tipo De Cambio", 1.0)
+        for c in (f.get("EstadoCuentaCombustible") or {}).get("Conceptos") or []:
+            fecha = _fecha_carga(c.get("Fecha"))
+            iva = sum(_num(t.get("Importe")) for t in (c.get("Traslados") or [])
+                      if t.get("Impuesto") in ("IVA", "002"))
+            if fecha and c.get("Rfc"):
+                cargas.append((c["Rfc"], fecha,
+                               _a_mxn(_num(c.get("Importe")) + iva, tc),
+                               f.get("Factura") or str(f.get("UUID") or "")))
+    if not cargas:
+        return
+    for reg in detalle:
+        emision = None
+        texto = str(reg.get("fecha_emision") or "").strip().split(" ", 1)[0]
+        try:
+            emision = datetime.strptime(texto, "%d/%m/%Y")
+        except ValueError:
+            continue
+        for rfc, fecha, total, folio in cargas:
+            dias = (emision - fecha).days
+            if (reg["rfc_emisor"] == rfc
+                    and abs(reg["total_mxn"] - total) <= TOLERANCIA_DUPLICADO
+                    and 0 <= dias <= VENTANA_DUPLICADO_DIAS):
+                reg["posible_duplicado_monedero"] = folio
+                break
 
 
 def _mes_clave(anio_mes):
@@ -379,6 +548,10 @@ def _fila_resumen_vacia(mes_clave):
         "iva_neto": 0.0,
         "total_neto": 0.0,
         "iva_acreditable_estimado": 0.0,
+        # F2.10 etapa 4 (D58): el monedero vive SOLO en estas claves nuevas.
+        "combustible_monedero": 0.0,
+        "iva_combustible_monedero": 0.0,
+        "iva_monedero_acreditable": 0.0,
     }
 
 
@@ -407,6 +580,11 @@ def construir_resumen_mensual(parsed_data_list, rfc_sujeto=None, pagos_data=None
         f = fila(mes_emision)
         f["subtotal_neto"] += reg["subtotal_mxn"]
         f["total_neto"] += reg["total_mxn"]
+        # Cargas del estado de cuenta de monedero: mes de emision del CFDI
+        # (D51), en columnas propias.
+        f["combustible_monedero"] += reg["ecc_total_mxn"]
+        f["iva_combustible_monedero"] += reg["ecc_iva_mxn"]
+        f["iva_monedero_acreditable"] += reg["ecc_iva_acreditable_mxn"]
 
         if reg["metodo"] == "PPD":
             f["ppd_facturado"] += reg["total_mxn"]
