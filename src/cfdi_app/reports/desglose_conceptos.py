@@ -32,6 +32,7 @@ from datetime import datetime
 
 from cfdi_app.reports.csv_curation import compute_iva_bases
 from cfdi_app.reports.pt_recibidas import FAMILIA_COMBUSTIBLE
+from cfdi_app.ui import filtering  # modulo puro (sin Qt); ui/__init__ esta vacio
 
 ORIGEN_CFDI = "CFDI"
 ORIGEN_ECC = "ECC"
@@ -618,3 +619,112 @@ def texto_pie_xml(resumen):
         renglones.append(
             f"IVA total (CFDI + complemento): ${resumen['iva_total']:,.2f}")
     return renglones
+
+
+# --- Vista del lote completo: filtro + arbol (desglose del lote) ----------
+
+# Campos de texto donde busca la caja del visor del lote. Misma sintaxis que
+# el resto de la app (ui/filtering.py): texto libre = subcadena sin distinguir
+# mayusculas; "total>=5000", "iva<100", "cantidad>10" para montos.
+CAMPOS_TEXTO_BUSQUEDA = [
+    "rfc_emisor", "nombre_emisor", "factura", "uuid", "descripcion",
+    "clave_prod_serv", "categoria", "tarjeta", "rfc_estacion",
+    "clave_estacion", "folio_operacion",
+]
+CAMPOS_MONTO_BUSQUEDA = {
+    "importe": "importe", "iva": "iva", "total": "total_linea",
+    "cantidad": "cantidad", "descuento": "descuento",
+}
+
+
+def filtrar_lineas(lineas, query):
+    """Sublista de lineas que coincide con `query` (vacio = todas). Reusa
+    ui/filtering.py para que esta caja se comporte igual que las del visor."""
+    return filtering.filter_records(
+        lineas, query, CAMPOS_TEXTO_BUSQUEDA, CAMPOS_MONTO_BUSQUEDA,
+        "total_linea")
+
+
+def _m(valor):
+    return f"{valor:,.2f}"
+
+
+def _texto_linea(l):
+    if l["origen"] == ORIGEN_ECC:
+        tarjeta = f"…{l['tarjeta'][-4:]}" if l["tarjeta"] else ""
+        partes = [l["descripcion"], l["fecha_carga"],
+                  f"tarjeta {tarjeta}" if tarjeta else "",
+                  f"estación {l['rfc_estacion']}" if l["rfc_estacion"] else ""]
+        return " · ".join(p for p in partes if p)
+    return " ".join(p for p in (l["clave_prod_serv"], l["descripcion"]) if p)
+
+
+# Encabezados de las columnas que acompanan al texto del nodo.
+COLUMNAS_ARBOL = ["Fecha", "Origen", "Cantidad", "Unidad", "Importe", "IVA",
+                  "Total"]
+
+
+def arbol(lineas):
+    """Arbol Proveedor (RFC) -> Factura -> lineas, ya como TEXTO listo para
+    pintar. Cada nodo: {'texto', 'cols' (ver COLUMNAS_ARBOL), 'uuid',
+    'hijos'}; 'uuid' es None en el nodo de proveedor. Los montos de proveedor
+    y factura son la suma de las lineas que se le pasaron (o sea, de lo
+    filtrado)."""
+    por_proveedor = OrderedDict()
+    for l in lineas:
+        prov = por_proveedor.setdefault(
+            l["rfc_emisor"], {"nombre": l["nombre_emisor"],
+                              "facturas": OrderedDict()})
+        prov["facturas"].setdefault(l["uuid"], []).append(l)
+
+    def sumas(ls):
+        return [_m(sum(x["importe"] for x in ls)),
+                _m(sum(x["iva"] for x in ls)),
+                _m(sum(x["total_linea"] for x in ls))]
+
+    nodos = []
+    for rfc, prov in sorted(por_proveedor.items(),
+                            key=lambda kv: (kv[1]["nombre"], kv[0])):
+        todas = [l for ls in prov["facturas"].values() for l in ls]
+        facturas = []
+        for uuid, ls in sorted(prov["facturas"].items(),
+                               key=lambda kv: (kv[1][0]["fecha_cfdi"],
+                                               kv[1][0]["factura"])):
+            primera = ls[0]
+            hijos = [{
+                "texto": _texto_linea(l),
+                "cols": ["", l["origen"], _m(l["cantidad"]), l["unidad"],
+                         _m(l["importe"]), _m(l["iva"]), _m(l["total_linea"])],
+                "uuid": uuid, "hijos": [],
+            } for l in ls]
+            facturas.append({
+                "texto": f"{primera['factura'] or uuid[:8]}  ·  {uuid}",
+                "cols": [primera["fecha_cfdi"], "", "", ""] + sumas(ls),
+                "uuid": uuid, "hijos": hijos,
+            })
+        n_cfdi = len(prov["facturas"])
+        nodos.append({
+            "texto": f"{rfc} – {prov['nombre']}   ({n_cfdi} CFDI, "
+                     f"{len(todas)} líneas)",
+            "cols": ["", "", "", ""] + sumas(todas),
+            "uuid": None, "hijos": facturas,
+        })
+    return nodos
+
+
+def texto_resumen_lote(visibles, total_lineas):
+    """Pie del visor del lote (texto plano). IVA del CFDI y del complemento
+    separados (D54)."""
+    r = resumen_xml(visibles)
+    n_cfdi = len({l["uuid"] for l in visibles})
+    n_prov = len({l["rfc_emisor"] for l in visibles})
+    partes = [
+        f"{len(visibles)} de {total_lineas} líneas  ·  {n_cfdi} CFDI  ·  "
+        f"{n_prov} proveedor(es)",
+        f"Importe: ${_m(r['importe'])}",
+        f"IVA del CFDI: ${_m(r['iva_cfdi'])}",
+    ]
+    if r["cargas"]:
+        partes.append(f"IVA del complemento: ${_m(r['iva_ecc'])}")
+    partes.append(f"Total: ${_m(r['total'])}")
+    return "   |   ".join(partes)

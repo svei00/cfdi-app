@@ -103,6 +103,13 @@ class AdminBovedaPage(QWidget):
         self.save_filtered_btn.setToolTip(
             "Exporta cada pestaña según su propio filtro de búsqueda activo")
         self.save_filtered_btn.setEnabled(False)
+        # F2.10: visor del desglose del LOTE completo (arbol RFC -> factura ->
+        # conceptos con filtro). Habilitado igual que "Guardar Excel…".
+        self.desglose_lote_btn = QPushButton("Desglose del lote…")
+        self.desglose_lote_btn.setToolTip(
+            "Ver todos los conceptos del lote, filtrables, con el RFC y la "
+            "factura que los contiene")
+        self.desglose_lote_btn.setEnabled(False)
         self.open_btn = QPushButton("Abrir archivo")
         self.open_btn.setEnabled(False)
         self.open_folder_btn = QPushButton("Abrir carpeta")
@@ -110,6 +117,7 @@ class AdminBovedaPage(QWidget):
         action_row.addWidget(self.process_btn)
         action_row.addWidget(self.save_btn)
         action_row.addWidget(self.save_filtered_btn)
+        action_row.addWidget(self.desglose_lote_btn)
         action_row.addWidget(self.open_btn)
         action_row.addWidget(self.open_folder_btn)
         layout.addLayout(action_row)
