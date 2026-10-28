@@ -39,6 +39,20 @@ class TestReportesDesglose(unittest.TestCase):
         self.assertTrue(self.page.desglose_btn.isEnabled())
         self.assertTrue(self.page.desglose_hint.isHidden())
 
+    def test_con_ultimo_periodo_recordado_el_aviso_lo_nombra(self):
+        self.page.set_desglose_available(
+            False, ultimo_periodo="GOOH841231EPA · Recibidas · 2026-06")
+        self.assertFalse(self.page.desglose_hint.isHidden())
+        self.assertIn("GOOH841231EPA · Recibidas · 2026-06",
+                      self.page.desglose_hint.text())
+        self.assertIn("cargarlo", self.page.desglose_hint.text())
+
+    def test_mientras_carga_avisa_que_el_desglose_se_abrira_solo(self):
+        self.page.set_desglose_available(
+            False, cargando=True, ultimo_periodo="algo")
+        self.assertIn("Cargando", self.page.desglose_hint.text())
+        self.assertTrue(self.page.desglose_btn.isEnabled())
+
     def test_pulsar_sin_lote_emite_la_señal_para_que_la_ventana_avise(self):
         recibidas = []
         self.page.open_desglose.connect(lambda: recibidas.append(1))

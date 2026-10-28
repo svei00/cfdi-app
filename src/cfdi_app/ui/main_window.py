@@ -28,7 +28,7 @@
 import logging
 import os
 
-from PySide6.QtCore import QThread, Slot
+from PySide6.QtCore import QThread, QTimer, Slot
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QDialog, QFileDialog, QMainWindow, QMessageBox, QStackedWidget,
@@ -74,6 +74,11 @@ class MainWindow(QMainWindow):
         self._last_result = None
         self._last_error = None
         self._last_saved_path = None
+        # F2.10: carpetas del procesamiento en curso (para recordar el ultimo
+        # periodo) y bandera "abrir el desglose al terminar" (carga lanzada
+        # desde Reportes).
+        self._carga_en_curso = []
+        self._abrir_desglose_pendiente = False
 
         self._move_thread = None
         self._move_worker = None
@@ -237,15 +242,14 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def show_reportes_page(self):
-        self.reportes_page.set_desglose_available(
-            self._last_result is not None and self._last_result.has_data)
+        self._refrescar_reportes()
         self._stack.setCurrentIndex(PAGE_REPORTES)
 
     @Slot()
     def on_desglose_clicked(self):
         """Desglose de conceptos (F2.10): opera sobre el lote ya cargado."""
         if self._last_result is None or not self._last_result.has_data:
-            self._avisar_sin_lote()
+            self._ofrecer_ultimo_periodo()
             return
         datos = self._last_result.all_parsed_data
         lineas = desglose_conceptos.aplanar_lote(datos)
@@ -271,6 +275,51 @@ class MainWindow(QMainWindow):
             lambda ruta: desglose_exporter.exportar_desglose(
                 datos, ruta, rfc_emisor=rfc, hojas=hojas),
             desglose_conceptos.nombre_archivo(filtradas, rfc))
+
+    def _ofrecer_ultimo_periodo(self):
+        """Sin lote en memoria: si hay un periodo recordado cuyas carpetas
+        siguen existiendo, ofrece cargarlo (y abrir el desglose al terminar);
+        si no, explica y lleva a la Boveda. Todo nace de un clic del usuario."""
+        if self._state == AppState.PROCESSING:
+            QMessageBox.information(
+                self, APP_TITLE,
+                "Ya se está cargando un periodo. Espera a que termine"
+                + (" (el desglose se abrirá solo)."
+                   if self._abrir_desglose_pendiente else "."))
+            return
+
+        folders, etiqueta = settings.get_last_load()
+        folders = [f for f in folders if os.path.isdir(f)]
+        if not folders:
+            self._avisar_sin_lote()
+            return
+
+        caja = QMessageBox(self)
+        caja.setWindowTitle(APP_TITLE)
+        caja.setIcon(QMessageBox.Question)
+        caja.setText("Todavía no hay un periodo cargado.")
+        caja.setInformativeText(
+            f"Último periodo usado:\n{etiqueta or folders[0]}\n\n"
+            "¿Lo cargo ahora? Al terminar se abre el desglose.")
+        cargar = caja.addButton("Cargar último periodo", QMessageBox.AcceptRole)
+        ir = caja.addButton("Ir al Administrador de Bóveda", QMessageBox.ActionRole)
+        caja.addButton("Cancelar", QMessageBox.RejectRole)
+        caja.setDefaultButton(cargar)
+        caja.exec()
+        elegido = caja.clickedButton()
+        if elegido is ir:
+            self.show_module_page()
+        elif elegido is cargar:
+            _, en_boveda = vault.describe_load(folders, settings.get_vault_root())
+            if en_boveda or len(folders) > 1:
+                self.input_folder = ""
+                self.folder_label.setText(f"Bóveda: {etiqueta or len(folders)}")
+            else:
+                self.input_folder = folders[0]
+                self.folder_label.setText(folders[0])
+            self.append_log(f"Cargando el último periodo: {etiqueta}")
+            self._abrir_desglose_pendiente = True
+            self._start_processing(folders)
 
     def _avisar_sin_lote(self):
         """El desglose necesita un lote ya procesado. En vez de no hacer nada,
@@ -419,6 +468,16 @@ class MainWindow(QMainWindow):
             self.progress_bar.setFormat("Procesando…")
 
         self._update_save_filtered_enabled()
+        self._refrescar_reportes()
+
+    def _refrescar_reportes(self):
+        """Mantiene el aviso de Reportes al dia (lote cargado / cargando /
+        ultimo periodo recordado)."""
+        hay_lote = self._last_result is not None and self._last_result.has_data
+        _, etiqueta = settings.get_last_load()
+        self.reportes_page.set_desglose_available(
+            hay_lote, cargando=self._state == AppState.PROCESSING,
+            ultimo_periodo=etiqueta)
 
     @Slot()
     def _update_save_filtered_enabled(self):
@@ -511,6 +570,7 @@ class MainWindow(QMainWindow):
         self._last_result = None
         self._last_error = None
         self._last_saved_path = None
+        self._carga_en_curso = [folders] if isinstance(folders, str) else list(folders)
         self.open_btn.setEnabled(False)
         self.open_folder_btn.setEnabled(False)
         self.results_view.clear()
@@ -553,10 +613,16 @@ class MainWindow(QMainWindow):
         self._last_result = result
 
         if not result.has_data:
+            self._abrir_desglose_pendiente = False
             self._apply_state(AppState.ERROR)
             self.append_log("\nNo se proceso ningun archivo XML CFDI valido.")
             self._log_errors(result.errors)
             return
+
+        # F2.10: recordar este periodo para que Reportes pueda recargarlo.
+        etiqueta, _ = vault.describe_load(
+            self._carga_en_curso, settings.get_vault_root())
+        settings.set_last_load(self._carga_en_curso, etiqueta)
 
         self._apply_state(AppState.DONE)
         summary = (
@@ -573,6 +639,7 @@ class MainWindow(QMainWindow):
     def on_error(self, message):
         """Se ejecuta en el hilo principal si el worker lanzo una excepcion."""
         self._last_error = message
+        self._abrir_desglose_pendiente = False
         self._apply_state(AppState.ERROR)
         self.append_log(f"\nERROR durante el procesamiento: {message}")
         logger.error("ProcessWorker fallo: %s", message)
@@ -582,6 +649,13 @@ class MainWindow(QMainWindow):
         # El hilo ya termino por completo; ahora si es seguro soltar las referencias.
         self._thread = None
         self._worker = None
+        # F2.10: carga lanzada desde Reportes. Se abre el desglose DESPUES de
+        # que el hilo termino y diferido al event loop: nunca un dialogo modal
+        # dentro del slot del worker (REGLA DE ORO de on_result).
+        if self._abrir_desglose_pendiente:
+            self._abrir_desglose_pendiente = False
+            if self._state == AppState.DONE:
+                QTimer.singleShot(0, self.on_desglose_clicked)
 
     def _log_errors(self, errors):
         if not errors:

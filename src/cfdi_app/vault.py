@@ -309,3 +309,40 @@ def resolve_vault_candidate(path):
             return parent, True
 
     return path, False
+
+
+def describe_load(folders, vault_root):
+    """Etiqueta legible de una carga + si es de la boveda. Devuelve
+    (etiqueta, en_boveda).
+
+    Carpetas bajo ``{RFC}/{Emitidas|Recibidas}/{YYYY}/{MM}`` -> p. ej.
+    ``GOOH841231EPA · Recibidas · 2026-06, 2026-07``. Una carpeta fuera de la
+    boveda (XMLs sueltos) -> su ruta (o "N carpetas"). Pura: no toca el disco.
+    """
+    folders = [f for f in (folders or []) if f]
+    if not folders:
+        return "", False
+
+    rfcs, tipos, periodos = [], [], []
+    for folder in folders:
+        try:
+            rel = os.path.relpath(folder, vault_root) if vault_root else ".."
+        except ValueError:  # otra unidad en Windows
+            rel = ".."
+        partes = [p for p in rel.replace("\\", "/").split("/") if p and p != "."]
+        if not partes or partes[0] == "..":
+            etiqueta = folders[0] if len(folders) == 1 else f"{len(folders)} carpetas"
+            return etiqueta, False
+        for lista, valor in zip((rfcs, tipos), partes[:2]):
+            if valor not in lista:
+                lista.append(valor)
+        if len(partes) >= 3:
+            periodo = "-".join(partes[2:4])
+            if periodo not in periodos:
+                periodos.append(periodo)
+
+    periodos.sort()
+    if len(periodos) > 6:
+        periodos = [f"{periodos[0]} … {periodos[-1]} ({len(periodos)} periodos)"]
+    partes_etiqueta = [", ".join(rfcs), ", ".join(tipos), ", ".join(periodos)]
+    return " · ".join(p for p in partes_etiqueta if p), True
