@@ -265,6 +265,18 @@ def exportar_desglose(parsed_data_list, output_path, rfc_emisor=None, hojas=None
     cuadre_filas = dc.cuadre(
         [d for d in parsed_data_list
          if not rfc_emisor or d.get("RFC Emisor") == rfc_emisor])
+    return _escribir_libro(lineas, cuadre_filas, output_path, elegidas)
+
+
+def exportar_desglose_lineas(lineas, output_path, hojas=None):
+    """Excel del desglose a partir de LINEAS ya filtradas (visor del lote).
+    La hoja Cuadre NUNCA se incluye: compara contra el Total del CFDI
+    completo y, con solo algunas lineas, saldria "no cuadra" falsamente."""
+    elegidas = set(HOJAS_DISPONIBLES if hojas is None else hojas) - {HOJA_CUADRE}
+    return _escribir_libro(lineas, [], output_path, elegidas)
+
+
+def _escribir_libro(lineas, cuadre_filas, output_path, elegidas):
     con_ecc = dc.hay_ecc(lineas)
 
     wb = Workbook()

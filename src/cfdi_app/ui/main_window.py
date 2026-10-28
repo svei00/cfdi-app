@@ -39,6 +39,7 @@ from cfdi_app.exporters import desglose_exporter
 from cfdi_app.reports import desglose_conceptos
 from cfdi_app.ui.admin_boveda_page import AdminBovedaPage
 from cfdi_app.ui.desglose_dialog import DesgloseDialog
+from cfdi_app.ui.desglose_lote_dialog import DesgloseLoteDialog
 from cfdi_app.ui.desglose_xml_dialog import DesgloseXmlDialog
 from cfdi_app.ui.inicio_page import InicioPage
 from cfdi_app.ui.reportes_page import ReportesPage
@@ -123,6 +124,7 @@ class MainWindow(QMainWindow):
         self.process_btn = self.admin_page.process_btn
         self.save_btn = self.admin_page.save_btn
         self.save_filtered_btn = self.admin_page.save_filtered_btn
+        self.desglose_lote_btn = self.admin_page.desglose_lote_btn
         self.open_btn = self.admin_page.open_btn
         self.open_folder_btn = self.admin_page.open_folder_btn
         self.progress_bar = self.admin_page.progress_bar
@@ -137,6 +139,7 @@ class MainWindow(QMainWindow):
         self.process_btn.clicked.connect(self.on_process_clicked)
         self.save_btn.clicked.connect(self.on_save_clicked)
         self.save_filtered_btn.clicked.connect(self.on_save_filtered_clicked)
+        self.desglose_lote_btn.clicked.connect(self.on_desglose_lote_clicked)
         self.open_btn.clicked.connect(self.on_open_clicked)
         self.open_folder_btn.clicked.connect(self.on_open_folder_clicked)
         # F2.7: el filtro de texto no es parte de AppState (§16.3) - se
@@ -262,8 +265,10 @@ class MainWindow(QMainWindow):
 
         rfc = dialog.selected_provider
         filtradas = desglose_conceptos.filtrar_por_proveedor(lineas, rfc)
+        hojas = dialog.selected_sheets
         self._guardar_desglose_excel(
-            datos, rfc, dialog.selected_sheets,
+            lambda ruta: desglose_exporter.exportar_desglose(
+                datos, ruta, rfc_emisor=rfc, hojas=hojas),
             desglose_conceptos.nombre_archivo(filtradas, rfc))
 
     @Slot(str)
@@ -294,13 +299,41 @@ class MainWindow(QMainWindow):
                  desglose_exporter.HOJA_CUADRE,
                  desglose_exporter.HOJA_COMBUSTIBLE}
         self._guardar_desglose_excel(
-            registros, None, hojas,
+            lambda ruta: desglose_exporter.exportar_desglose(
+                registros, ruta, hojas=hojas),
             desglose_conceptos.nombre_archivo(
                 lineas, sufijo=lineas[0]["factura"] or uuid[:8]))
 
-    def _guardar_desglose_excel(self, datos, rfc, hojas, nombre_sugerido):
-        """Pide la ruta y escribe el Excel de desglose (compartido por el
-        reporte del lote y el de un solo XML)."""
+    @Slot()
+    def on_desglose_lote_clicked(self):
+        """Visor del desglose del lote completo: arbol RFC -> factura ->
+        conceptos con caja de busqueda (F2.10)."""
+        if self._last_result is None or not self._last_result.has_data:
+            return
+        lineas = desglose_conceptos.aplanar_lote(
+            self._last_result.all_parsed_data)
+        if not lineas:
+            QMessageBox.information(
+                self, APP_TITLE,
+                "El lote cargado no tiene facturas con conceptos "
+                "(solo hay pagos, nóminas u otros).")
+            return
+
+        dialog = DesgloseLoteDialog(lineas, self)
+        dialog.desglose_requested.connect(self.on_desglose_xml_requested)
+        dialog.exec()
+        if not dialog.wants_export:
+            return
+        visibles = dialog.visible_lines
+        sufijo = f"filtrado-{dialog.query[:30]}" if dialog.query else ""
+        self._guardar_desglose_excel(
+            lambda ruta: desglose_exporter.exportar_desglose_lineas(
+                visibles, ruta),
+            desglose_conceptos.nombre_archivo(visibles, sufijo=sufijo))
+
+    def _guardar_desglose_excel(self, escribir, nombre_sugerido):
+        """Pide la ruta y llama a escribir(ruta) (compartido por el reporte
+        del lote, el de un solo XML y el filtrado del visor)."""
         default_dir = settings.get_last_save_dir() or paths.REPORTS_DIR
         output_path, _ = QFileDialog.getSaveFileName(
             self, "Guardar Desglose de conceptos",
@@ -311,8 +344,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            desglose_exporter.exportar_desglose(
-                datos, output_path, rfc_emisor=rfc, hojas=hojas)
+            escribir(output_path)
         except PermissionError:
             QMessageBox.critical(
                 self, APP_TITLE,
@@ -350,6 +382,7 @@ class MainWindow(QMainWindow):
         self.open_loose_xml_btn.setEnabled(ws.select_enabled and not moving)
         self.process_btn.setEnabled(ws.process_enabled and not moving)
         self.save_btn.setEnabled(ws.save_enabled and not moving)
+        self.desglose_lote_btn.setEnabled(ws.save_enabled and not moving)
         # F2.9 (D43/§18.3): mismo criterio que "Guardar Excel..." - hay
         # resultado (DONE) que exportar.
         self.export_csv_action.setEnabled(ws.save_enabled and not moving)

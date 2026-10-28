@@ -265,6 +265,34 @@ Ya estaba decidido en D53; aquí se pone completo para que no quede implícito:
    en lugar de `ProcessResult`. **No se requiere Opus para esto**: ya está
    dentro del diseño existente.
 
+## 6.3 Visor del desglose del LOTE (pedido del dueño, 2026-10-28)
+
+Tras probar el clic derecho ("solo de ese XML"), el dueño pidió ver **todo el
+lote, filtrado, con el RFC y la factura que contiene cada concepto**. Esto
+**adelanta** parte de lo que §6.2 dejaba para F5: la búsqueda de texto libre
+sobre los conceptos, pero solo sobre el lote ya cargado (sin SQLite).
+
+- **Dónde:** botón **"Desglose del lote…"** en la pantalla del Administrador de
+  Bóveda, junto a "Guardar filtrado…" (se habilita igual que "Guardar
+  Excel…"). Antes la única entrada era Inicio → Reportes y no se encontraba.
+- **Qué muestra:** ventana con caja de búsqueda y un **árbol**: Proveedor (RFC)
+  → Factura (folio + UUID) → líneas (concepto, o carga con fecha, tarjeta y
+  estación). Cada nodo suma importe, IVA y total de lo que se ve.
+- **Búsqueda:** mismo comportamiento que el resto de la app (`ui/filtering.py`):
+  texto libre sobre RFC, proveedor, factura, UUID, concepto, clave, categoría,
+  tarjeta y estación; y montos `total>=5000`, `iva<100`, `cantidad>10`.
+- **Interacción:** doble clic o menú contextual en una factura/línea → abre el
+  desglose de ESE XML (el diálogo de la etapa 3). Con búsqueda activa se
+  expande todo (hasta 1,500 líneas; arriba de eso se avisa y se expande a
+  mano). Las líneas de cada factura se crean al expandirla.
+- **"Exportar lo filtrado…":** Excel con lo que se ve (Detalle, resúmenes,
+  Combustible, IVA). **Sin la hoja Cuadre**, porque compara contra el Total
+  del CFDI completo y con solo algunas líneas saldría "no cuadra" por error.
+  Nombre: `Desglose_<RFC>_<periodo>_filtrado-<texto>.xlsx`.
+- **Capas:** `filtrar_lineas`, `arbol`, `texto_resumen_lote` (puras, en
+  `reports/desglose_conceptos.py`), `exportar_desglose_lineas` (exporter) y
+  `ui/desglose_lote_dialog.py` (solo pinta).
+
 ## 7. Respuestas del dueño (2026-10-27)
 
 - **P1** Mes ancla = **mes del CFDI** → D51 confirmada.

@@ -320,6 +320,126 @@ class TestReportePorXml(_Base):
         self.assertEqual(ws.max_row, 1 + 34 + 2)
 
 
+class TestFiltroDeProveedores(unittest.TestCase):
+    PROVS = [("ASE930924SS7", "EDENRED MEXICO", 5),
+             ("WMT970714R10", "NUEVA WAL MART DE MÉXICO", 12),
+             ("HDM001017AS1", "HOME DEPOT MEXICO", 3)]
+
+    def test_vacio_devuelve_todos(self):
+        self.assertEqual(dc.filtrar_proveedores(self.PROVS, ""), self.PROVS)
+        self.assertEqual(dc.filtrar_proveedores(self.PROVS, "   "), self.PROVS)
+
+    def test_por_rfc_completo_o_parcial_sin_distinguir_mayusculas(self):
+        self.assertEqual([p[0] for p in dc.filtrar_proveedores(self.PROVS, "ase9309")],
+                         ["ASE930924SS7"])
+        self.assertEqual([p[0] for p in dc.filtrar_proveedores(self.PROVS, "r10")],
+                         ["WMT970714R10"])
+
+    def test_por_razon_social_parcial(self):
+        self.assertEqual([p[0] for p in dc.filtrar_proveedores(self.PROVS, "depot")],
+                         ["HDM001017AS1"])
+
+    def test_sin_acentos(self):
+        # 'mexico' encuentra 'MÉXICO' y 'MEXICO'.
+        self.assertEqual(len(dc.filtrar_proveedores(self.PROVS, "mexico")), 3)
+        self.assertEqual([p[0] for p in dc.filtrar_proveedores(self.PROVS, "méxico wal")],
+                         ["WMT970714R10"])
+
+    def test_varias_palabras_en_cualquier_orden(self):
+        self.assertEqual([p[0] for p in dc.filtrar_proveedores(self.PROVS, "mart wal")],
+                         ["WMT970714R10"])
+
+    def test_sin_coincidencias(self):
+        self.assertEqual(dc.filtrar_proveedores(self.PROVS, "zzz"), [])
+
+
+class TestVisorDelLote(_Base):
+    """Filtro + arbol Proveedor -> Factura -> lineas del visor del lote."""
+
+    def test_filtro_vacio_devuelve_todo(self):
+        self.assertEqual(len(dc.filtrar_lineas(self.lineas, "")), len(self.lineas))
+        self.assertEqual(len(dc.filtrar_lineas(self.lineas, "   ")), len(self.lineas))
+
+    def test_busca_por_descripcion_sin_distinguir_mayusculas(self):
+        magna = dc.filtrar_lineas(self.lineas, "MAGNA")
+        self.assertGreater(len(magna), 0)
+        self.assertTrue(all(l["descripcion"] == "Magna" for l in magna))
+
+    def test_busca_por_rfc_de_la_estacion_y_por_factura(self):
+        por_estacion = dc.filtrar_lineas(self.lineas, "omc100818gz7")
+        self.assertEqual(len(por_estacion), 1)
+        self.assertEqual(por_estacion[0]["factura"], "TCGE-000004231229")
+        por_factura = dc.filtrar_lineas(self.lineas, "TCTL-000000080149")
+        self.assertEqual({l["uuid"] for l in por_factura}, {UUID_PEAJE})
+
+    def test_busca_por_uuid_y_por_proveedor(self):
+        self.assertEqual(
+            {l["uuid"] for l in dc.filtrar_lineas(self.lineas, "3358e192")},
+            {UUID_JUNIO})
+        self.assertEqual(len(dc.filtrar_lineas(self.lineas, "edenred")),
+                         len(self.lineas))
+
+    def test_montos_con_la_misma_sintaxis_del_visor(self):
+        grandes = dc.filtrar_lineas(self.lineas, "total>=5000")
+        self.assertEqual([l["uuid"] for l in grandes], [UUID_PEAJE])
+        # Sin nombre de campo se usa el total de la linea.
+        self.assertEqual(len(dc.filtrar_lineas(self.lineas, ">=5000")), 1)
+        iva = dc.filtrar_lineas(self.lineas, "iva>=300")
+        self.assertTrue(all(l["iva"] >= 300 for l in iva))
+
+    def test_sin_coincidencias(self):
+        self.assertEqual(dc.filtrar_lineas(self.lineas, "tornillo"), [])
+        self.assertEqual(dc.arbol([]), [])
+
+    def test_arbol_proveedor_factura_lineas(self):
+        nodos = dc.arbol(self.lineas)
+        self.assertEqual(len(nodos), 1)
+        prov = nodos[0]
+        self.assertTrue(prov["texto"].startswith("ASE930924SS7 – EDENRED MEXICO"))
+        self.assertIsNone(prov["uuid"])
+        self.assertEqual(len(prov["hijos"]), 5)  # 5 facturas
+        self.assertEqual(len(dc.COLUMNAS_ARBOL), len(prov["cols"]))
+        junio = next(f for f in prov["hijos"] if f["uuid"] == UUID_JUNIO)
+        self.assertTrue(junio["texto"].startswith("TCGE-000004231229"))
+        self.assertIn(UUID_JUNIO, junio["texto"])
+        self.assertEqual(len(junio["hijos"]), 34)
+        self.assertEqual(junio["cols"][0], "2026-06-30")
+        # Montos de la factura = suma de sus lineas (comision + 33 cargas).
+        self.assertEqual(junio["cols"][-1], "29,264.49")  # 1,078.80 + 28,185.69
+        self.assertTrue(all(h["uuid"] == UUID_JUNIO for h in junio["hijos"]))
+
+    def test_el_arbol_de_lo_filtrado_solo_trae_lo_filtrado(self):
+        nodos = dc.arbol(dc.filtrar_lineas(self.lineas, "omc100818gz7"))
+        self.assertEqual(len(nodos[0]["hijos"]), 1)
+        self.assertEqual(len(nodos[0]["hijos"][0]["hijos"]), 1)
+        linea = nodos[0]["hijos"][0]["hijos"][0]
+        self.assertIn("estación OMC100818GZ7", linea["texto"])
+        self.assertIn("2026-06-24", linea["texto"])
+        self.assertEqual(linea["cols"][1], "ECC")
+
+    def test_resumen_del_lote_separa_los_iva(self):
+        magna = dc.filtrar_lineas(self.lineas, "magna")
+        texto = dc.texto_resumen_lote(magna, len(self.lineas))
+        self.assertIn(f"{len(magna)} de {len(self.lineas)} líneas", texto)
+        self.assertIn("IVA del CFDI: $0.00", texto)
+        self.assertIn("IVA del complemento:", texto)
+
+    def test_exportar_lo_filtrado_no_incluye_cuadre(self):
+        magna = dc.filtrar_lineas(self.lineas, "magna")
+        ruta = os.path.join(tempfile.mkdtemp(), "filtrado.xlsx")
+        escritas = dx.exportar_desglose_lineas(magna, ruta)
+        self.assertNotIn(dx.HOJA_CUADRE, escritas)
+        self.assertIn(dx.HOJA_DETALLE, escritas)
+        ws = openpyxl.load_workbook(ruta)[dx.HOJA_DETALLE]
+        self.assertEqual(ws.max_row, 1 + len(magna) + 2)
+
+    def test_nombre_del_archivo_filtrado(self):
+        magna = dc.filtrar_lineas(self.lineas, "magna")
+        self.assertEqual(
+            dc.nombre_archivo(magna, sufijo="filtrado-magna"),
+            "Desglose_GAGG010101000_2026-06_a_2026-08_filtrado-magna.xlsx")
+
+
 class TestExporter(_Base):
     def _exportar(self, **kwargs):
         carpeta = tempfile.mkdtemp()
