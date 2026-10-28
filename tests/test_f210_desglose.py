@@ -320,6 +320,39 @@ class TestReportePorXml(_Base):
         self.assertEqual(ws.max_row, 1 + 34 + 2)
 
 
+class TestFiltroDeProveedores(unittest.TestCase):
+    PROVS = [("ASE930924SS7", "EDENRED MEXICO", 5),
+             ("WMT970714R10", "NUEVA WAL MART DE MÉXICO", 12),
+             ("HDM001017AS1", "HOME DEPOT MEXICO", 3)]
+
+    def test_vacio_devuelve_todos(self):
+        self.assertEqual(dc.filtrar_proveedores(self.PROVS, ""), self.PROVS)
+        self.assertEqual(dc.filtrar_proveedores(self.PROVS, "   "), self.PROVS)
+
+    def test_por_rfc_completo_o_parcial_sin_distinguir_mayusculas(self):
+        self.assertEqual([p[0] for p in dc.filtrar_proveedores(self.PROVS, "ase9309")],
+                         ["ASE930924SS7"])
+        self.assertEqual([p[0] for p in dc.filtrar_proveedores(self.PROVS, "r10")],
+                         ["WMT970714R10"])
+
+    def test_por_razon_social_parcial(self):
+        self.assertEqual([p[0] for p in dc.filtrar_proveedores(self.PROVS, "depot")],
+                         ["HDM001017AS1"])
+
+    def test_sin_acentos(self):
+        # 'mexico' encuentra 'MÉXICO' y 'MEXICO'.
+        self.assertEqual(len(dc.filtrar_proveedores(self.PROVS, "mexico")), 3)
+        self.assertEqual([p[0] for p in dc.filtrar_proveedores(self.PROVS, "méxico wal")],
+                         ["WMT970714R10"])
+
+    def test_varias_palabras_en_cualquier_orden(self):
+        self.assertEqual([p[0] for p in dc.filtrar_proveedores(self.PROVS, "mart wal")],
+                         ["WMT970714R10"])
+
+    def test_sin_coincidencias(self):
+        self.assertEqual(dc.filtrar_proveedores(self.PROVS, "zzz"), [])
+
+
 class TestVisorDelLote(_Base):
     """Filtro + arbol Proveedor -> Factura -> lineas del visor del lote."""
 

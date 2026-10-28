@@ -27,6 +27,7 @@ Reglas de aplanado (diseño §3.2):
     inventa (el XSD ecc12 aun no esta en docs/, ver diseño §3.1).
 """
 import re
+import unicodedata
 from collections import OrderedDict
 from datetime import datetime
 
@@ -274,6 +275,24 @@ def proveedores(lineas):
         info[1].add(l["uuid"])
     filas = [(rfc, nombre, len(uuids)) for rfc, (nombre, uuids) in por_rfc.items()]
     return sorted(filas, key=lambda f: (f[1], f[0]))
+
+
+def _normalizar(texto):
+    """Minusculas y sin acentos, para que 'mexico' encuentre 'MÉXICO'."""
+    sin_acentos = unicodedata.normalize("NFKD", str(texto or ""))
+    return "".join(c for c in sin_acentos
+                   if not unicodedata.combining(c)).lower()
+
+
+def filtrar_proveedores(provs, query):
+    """De la lista [(rfc, nombre, n_cfdi)] deja los que coinciden con `query`
+    en el RFC o en la razon social. Sin distinguir mayusculas ni acentos; varias
+    palabras = todas deben aparecer (en cualquier orden). Vacio = todos."""
+    terminos = _normalizar(query).split()
+    if not terminos:
+        return list(provs)
+    return [p for p in provs
+            if all(t in _normalizar(f"{p[0]} {p[1]}") for t in terminos)]
 
 
 def filtrar_por_proveedor(lineas, rfc_emisor):
