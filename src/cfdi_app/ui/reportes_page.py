@@ -36,6 +36,18 @@ _PRIMARY_BTN_STYLESHEET = (
     "QPushButton#reportes_btn_primary:hover { background-color: palette(link); }"
 )
 
+_ACTION_BTN_STYLESHEET = (
+    "QPushButton#reportes_btn_desglose {"
+    "  text-align: left; padding: 16px 20px; border-radius: 8px;"
+    "  border: 1px solid palette(highlight); background-color: transparent;"
+    "  font-size: 14px; font-weight: 600;"
+    "}"
+    "QPushButton#reportes_btn_desglose:hover { background-color: palette(alternate-base); }"
+    "QPushButton#reportes_btn_desglose:disabled {"
+    "  border: 1px solid palette(mid); color: palette(placeholder-text);"
+    "}"
+)
+
 _SECONDARY_BTN_STYLESHEET = (
     "QPushButton#reportes_btn_secondary {"
     "  text-align: left; padding: 16px 20px; border-radius: 8px;"
@@ -49,6 +61,7 @@ class ReportesPage(QWidget):
     """Carátula de reportes: abrir carpeta de Excel + papeles de trabajo."""
 
     open_reports_folder = Signal()
+    open_desglose = Signal()
     go_home = Signal()
 
     def __init__(self, parent=None):
@@ -75,6 +88,15 @@ class ReportesPage(QWidget):
         outer.addLayout(row)
         outer.addStretch(2)
 
+    def set_desglose_available(self, available):
+        """Habilita el desglose solo si ya hay un lote procesado."""
+        self.desglose_btn.setEnabled(bool(available))
+        self.desglose_btn.setToolTip(
+            "Excel con una línea por concepto de cada CFDI del lote: por "
+            "proveedor, mes, ejercicio y concepto, con hoja de IVA"
+            if available else
+            "Carga y procesa meses en Administrador de Bóveda primero")
+
     def _build_card(self):
         card = QFrame()
         card.setObjectName("reportes_card")
@@ -90,8 +112,9 @@ class ReportesPage(QWidget):
         title.setStyleSheet("font-size: 20px; font-weight: bold;")
         title.setAlignment(Qt.AlignHCenter)
         subtitle = QLabel(
-            "Aquí encuentras los archivos de Excel que has generado y, "
-            "próximamente, los papeles de trabajo fiscales.")
+            "Aquí encuentras los archivos de Excel que has generado, el "
+            "desglose de conceptos y, próximamente, los papeles de trabajo "
+            "fiscales.")
         subtitle.setWordWrap(True)
         subtitle.setAlignment(Qt.AlignHCenter)
         subtitle.setStyleSheet("color: palette(placeholder-text);")
@@ -108,6 +131,15 @@ class ReportesPage(QWidget):
             "Abre la carpeta donde se guardan tus archivos de Excel")
         self.open_folder_btn.clicked.connect(self.open_reports_folder.emit)
         layout.addWidget(self.open_folder_btn)
+
+        self.desglose_btn = QPushButton("Desglose de conceptos…")
+        self.desglose_btn.setObjectName("reportes_btn_desglose")
+        self.desglose_btn.setStyleSheet(_ACTION_BTN_STYLESHEET)
+        self.desglose_btn.setMinimumHeight(52)
+        self.desglose_btn.setCursor(Qt.PointingHandCursor)
+        self.desglose_btn.clicked.connect(self.open_desglose.emit)
+        self.set_desglose_available(False)
+        layout.addWidget(self.desglose_btn)
 
         self.work_papers_btn = QPushButton("Papeles de trabajo y reportes fiscales")
         self.work_papers_btn.setObjectName("reportes_btn_secondary")
