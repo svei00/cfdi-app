@@ -89,13 +89,15 @@ class ReportesPage(QWidget):
         outer.addStretch(2)
 
     def set_desglose_available(self, available):
-        """Habilita el desglose solo si ya hay un lote procesado."""
-        self.desglose_btn.setEnabled(bool(available))
+        """Indica si ya hay un lote procesado. El boton NUNCA se deshabilita:
+        un boton gris que no explica nada parece roto. Sin lote, un aviso
+        visible dice que hacer y, al pulsarlo, main_window ofrece ir a la
+        Boveda."""
+        self.desglose_btn.setEnabled(True)
         self.desglose_btn.setToolTip(
             "Excel con una línea por concepto de cada CFDI del lote: por "
-            "proveedor, mes, ejercicio y concepto, con hoja de IVA"
-            if available else
-            "Carga y procesa meses en Administrador de Bóveda primero")
+            "proveedor, mes, ejercicio y concepto, con hoja de IVA")
+        self.desglose_hint.setVisible(not available)
 
     def _build_card(self):
         card = QFrame()
@@ -138,8 +140,16 @@ class ReportesPage(QWidget):
         self.desglose_btn.setMinimumHeight(52)
         self.desglose_btn.setCursor(Qt.PointingHandCursor)
         self.desglose_btn.clicked.connect(self.open_desglose.emit)
-        self.set_desglose_available(False)
         layout.addWidget(self.desglose_btn)
+
+        self.desglose_hint = QLabel(
+            "Primero carga y procesa un periodo en el Administrador de "
+            "Bóveda; después vuelve aquí.")
+        self.desglose_hint.setWordWrap(True)
+        self.desglose_hint.setStyleSheet(
+            "color: palette(placeholder-text); padding-left: 4px;")
+        layout.addWidget(self.desglose_hint)
+        self.set_desglose_available(False)
 
         self.work_papers_btn = QPushButton("Papeles de trabajo y reportes fiscales")
         self.work_papers_btn.setObjectName("reportes_btn_secondary")

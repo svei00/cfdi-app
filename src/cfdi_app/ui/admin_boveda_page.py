@@ -108,7 +108,7 @@ class AdminBovedaPage(QWidget):
         self.desglose_lote_btn = QPushButton("Desglose del lote…")
         self.desglose_lote_btn.setToolTip(
             "Ver todos los conceptos del lote, filtrables, con el RFC y la "
-            "factura que los contiene")
+            "factura que los contiene (disponible después de Procesar)")
         self.desglose_lote_btn.setEnabled(False)
         self.open_btn = QPushButton("Abrir archivo")
         self.open_btn.setEnabled(False)

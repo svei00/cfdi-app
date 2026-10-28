@@ -245,6 +245,7 @@ class MainWindow(QMainWindow):
     def on_desglose_clicked(self):
         """Desglose de conceptos (F2.10): opera sobre el lote ya cargado."""
         if self._last_result is None or not self._last_result.has_data:
+            self._avisar_sin_lote()
             return
         datos = self._last_result.all_parsed_data
         lineas = desglose_conceptos.aplanar_lote(datos)
@@ -270,6 +271,25 @@ class MainWindow(QMainWindow):
             lambda ruta: desglose_exporter.exportar_desglose(
                 datos, ruta, rfc_emisor=rfc, hojas=hojas),
             desglose_conceptos.nombre_archivo(filtradas, rfc))
+
+    def _avisar_sin_lote(self):
+        """El desglose necesita un lote ya procesado. En vez de no hacer nada,
+        lo dice y ofrece llevar al usuario a donde se carga."""
+        aviso = QMessageBox(self)
+        aviso.setWindowTitle(APP_TITLE)
+        aviso.setIcon(QMessageBox.Information)
+        aviso.setText("Todavía no hay un periodo cargado.")
+        aviso.setInformativeText(
+            "El desglose se arma con los CFDI que ya procesaste. Elige el RFC "
+            "y los meses en el Administrador de Bóveda, pulsa Procesar y "
+            "vuelve a Reportes (o usa el botón «Desglose del lote…» de la "
+            "propia Bóveda).")
+        ir = aviso.addButton("Ir al Administrador de Bóveda",
+                             QMessageBox.AcceptRole)
+        aviso.addButton("Cancelar", QMessageBox.RejectRole)
+        aviso.exec()
+        if aviso.clickedButton() is ir:
+            self.show_module_page()
 
     @Slot(str)
     def on_desglose_xml_requested(self, uuid):
