@@ -39,6 +39,7 @@ from cfdi_app.exporters import desglose_exporter
 from cfdi_app.reports import desglose_conceptos
 from cfdi_app.ui.admin_boveda_page import AdminBovedaPage
 from cfdi_app.ui.desglose_dialog import DesgloseDialog
+from cfdi_app.ui.desglose_xml_dialog import DesgloseXmlDialog
 from cfdi_app.ui.inicio_page import InicioPage
 from cfdi_app.ui.reportes_page import ReportesPage
 from cfdi_app.ui.state import AppState, widget_states_for
@@ -127,6 +128,10 @@ class MainWindow(QMainWindow):
         self.progress_bar = self.admin_page.progress_bar
         self.results_view = self.admin_page.results_view
         self.log_view = self.admin_page.log_view
+
+        # F2.10 etapa 3: clic derecho en Facturas -> desglose de ese XML.
+        self.results_view.desglose_requested.connect(
+            self.on_desglose_xml_requested)
 
         self.open_loose_xml_btn.clicked.connect(self.on_select_folder)
         self.process_btn.clicked.connect(self.on_process_clicked)
@@ -257,11 +262,49 @@ class MainWindow(QMainWindow):
 
         rfc = dialog.selected_provider
         filtradas = desglose_conceptos.filtrar_por_proveedor(lineas, rfc)
+        self._guardar_desglose_excel(
+            datos, rfc, dialog.selected_sheets,
+            desglose_conceptos.nombre_archivo(filtradas, rfc))
+
+    @Slot(str)
+    def on_desglose_xml_requested(self, uuid):
+        """Desglose de UN comprobante (F2.10 etapa 3): clic derecho en el
+        visor de Facturas. Si el mismo UUID aparece varias veces en el lote
+        se usa la primera aparicion."""
+        if self._last_result is None:
+            return
+        uuid = str(uuid).upper()
+        registros = [d for d in self._last_result.all_parsed_data
+                     if str(d.get("UUID") or "").upper() == uuid][:1]
+        lineas = desglose_conceptos.aplanar_lote(registros)
+        if not lineas:
+            QMessageBox.information(
+                self, APP_TITLE,
+                "Este comprobante no tiene conceptos de gasto que desglosar "
+                "(por ejemplo un pago o una nómina).")
+            return
+
+        dialog = DesgloseXmlDialog(lineas, desglose_conceptos.cuadre(registros)[0], self)
+        dialog.exec()
+        if not dialog.wants_export:
+            return
+        # Un solo comprobante: las hojas agregadas ("Por mes", etc.) no
+        # aportan nada, solo Detalle, IVA, Cuadre y (si aplica) Combustible.
+        hojas = {desglose_exporter.HOJA_DETALLE, desglose_exporter.HOJA_IVA,
+                 desglose_exporter.HOJA_CUADRE,
+                 desglose_exporter.HOJA_COMBUSTIBLE}
+        self._guardar_desglose_excel(
+            registros, None, hojas,
+            desglose_conceptos.nombre_archivo(
+                lineas, sufijo=lineas[0]["factura"] or uuid[:8]))
+
+    def _guardar_desglose_excel(self, datos, rfc, hojas, nombre_sugerido):
+        """Pide la ruta y escribe el Excel de desglose (compartido por el
+        reporte del lote y el de un solo XML)."""
         default_dir = settings.get_last_save_dir() or paths.REPORTS_DIR
-        default_path = os.path.join(
-            default_dir, desglose_conceptos.nombre_archivo(filtradas, rfc))
         output_path, _ = QFileDialog.getSaveFileName(
-            self, "Guardar Desglose de conceptos", default_path,
+            self, "Guardar Desglose de conceptos",
+            os.path.join(default_dir, nombre_sugerido),
             "Archivos de Excel (*.xlsx)")
         if not output_path:
             self.append_log("Desglose cancelado por el usuario.")
@@ -269,8 +312,7 @@ class MainWindow(QMainWindow):
 
         try:
             desglose_exporter.exportar_desglose(
-                datos, output_path, rfc_emisor=rfc,
-                hojas=dialog.selected_sheets)
+                datos, output_path, rfc_emisor=rfc, hojas=hojas)
         except PermissionError:
             QMessageBox.critical(
                 self, APP_TITLE,

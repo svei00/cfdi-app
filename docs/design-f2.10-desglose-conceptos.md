@@ -242,7 +242,7 @@ que traerá el dueño.
 |---|---|
 | 1 Parser ECC | ✅ 2026-10-27 (tag `pre-f2.10-ecc`) |
 | 2 Capa pura + Excel + botón en Reportes | ✅ 2026-10-27 (`reports/desglose_conceptos.py`, `exporters/desglose_exporter.py`, `ui/desglose_dialog.py`). Pruebas verdes; **la parte Qt (botón y diálogo) NO se pudo ejecutar en el contenedor** (sin `libEGL`) y falta probarla en la máquina del dueño |
-| 3 Diálogo "Ver desglose de este XML" | Pendiente |
+| 3 Diálogo "Ver desglose de este XML" | ✅ 2026-10-28 (clic derecho en Facturas → `ui/desglose_xml_dialog.py`; helpers puros `tabla_xml`/`resumen_xml`/`texto_pie_xml`). Pruebas puras verdes; las de UI (`tests/test_f210_desglose_xml_ui.py`) se omiten en el contenedor y **faltan correrlas en la máquina del dueño** |
 | 4 ECC en PT-Recibidas | Pendiente (compuerta §8.1) |
 
 ## 6.2 Cómo se consulta (aclaración pedida por el dueño, 2026-10-27)

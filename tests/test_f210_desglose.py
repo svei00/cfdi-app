@@ -247,6 +247,79 @@ class TestCuadre(_Base):
         self.assertAlmostEqual(sum(l["total_linea"] for l in lineas), 3200.63, 2)
 
 
+class TestReportePorXml(_Base):
+    """Etapa 3: helpers puros del dialogo "Ver desglose de este XML"."""
+
+    def test_tabla_de_estado_de_combustible_incluye_columnas_de_carga(self):
+        l = dc.lineas_de_uuid(self.lineas, UUID_JUNIO)
+        encabezados, filas, numericas = dc.tabla_xml(l)
+        self.assertEqual(len(filas), 34)  # comision + 33 cargas
+        self.assertIn("Tarjeta", encabezados)
+        self.assertEqual(len(encabezados), len(numericas))
+        self.assertTrue(all(len(f) == len(encabezados) for f in filas))
+        comision = dict(zip(encabezados, filas[0]))
+        self.assertEqual(comision["Origen"], "CFDI")
+        self.assertEqual(comision["Total"], "1,078.80")
+        self.assertEqual(comision["Tarjeta"], "")
+        carga = dict(zip(encabezados, filas[1]))
+        self.assertEqual(carga["Origen"], "ECC")
+        self.assertEqual(carga["Descripción"], "Magna")
+        self.assertEqual(carga["Fecha carga"], "2026-06-24")
+
+    def test_factura_normal_no_muestra_columnas_de_combustible(self):
+        encabezados, filas, _ = dc.tabla_xml(
+            dc.lineas_de_uuid(self.lineas, UUID_PEAJE))
+        self.assertEqual(len(filas), 1)
+        self.assertNotIn("Tarjeta", encabezados)
+        self.assertNotIn("Fecha carga", encabezados)
+
+    def test_resumen_separa_iva_del_cfdi_y_del_complemento(self):
+        r = dc.resumen_xml(dc.lineas_de_uuid(self.lineas, UUID_JUNIO))
+        self.assertEqual(r["lineas_cfdi"], 1)
+        self.assertEqual(r["cargas"], 33)
+        self.assertAlmostEqual(r["importe_cfdi"], 930.0, 2)
+        self.assertAlmostEqual(r["importe_ecc"], 24393.77, 2)
+        self.assertAlmostEqual(r["iva_cfdi"], 148.80, 2)
+        self.assertAlmostEqual(r["iva_ecc"], 3791.92, 2)
+        self.assertAlmostEqual(r["iva_total"], 3940.72, 2)
+        self.assertAlmostEqual(r["total_cfdi"], 1078.80, 2)
+        self.assertAlmostEqual(r["total_ecc"], 28185.69, 2)
+        self.assertAlmostEqual(r["litros"], 1127.97, 2)
+
+    def test_pie_sin_complemento_es_un_solo_renglon(self):
+        pie = dc.texto_pie_xml(
+            dc.resumen_xml(dc.lineas_de_uuid(self.lineas, UUID_PEAJE)))
+        self.assertEqual(len(pie), 1)
+        self.assertIn("$5,772.99", pie[0])
+
+    def test_pie_con_complemento_trae_el_iva_total(self):
+        pie = dc.texto_pie_xml(
+            dc.resumen_xml(dc.lineas_de_uuid(self.lineas, UUID_JUNIO)))
+        self.assertEqual(len(pie), 3)
+        self.assertIn("IVA total (CFDI + complemento): $3,940.72", pie[2])
+
+    def test_nombre_de_archivo_de_un_xml_lleva_la_factura_saneada(self):
+        l = dc.lineas_de_uuid(self.lineas, UUID_JUNIO)
+        self.assertEqual(
+            dc.nombre_archivo(l, sufijo="TCGE-000004231229"),
+            "Desglose_GAGG010101000_2026-06_TCGE-000004231229.xlsx")
+        # Caracteres no validos en un nombre de archivo se neutralizan.
+        self.assertEqual(
+            dc.nombre_archivo(l, sufijo='A/B:C*"1'),
+            "Desglose_GAGG010101000_2026-06_A-B-C-1.xlsx")
+
+    def test_exportar_un_solo_xml_con_las_hojas_de_la_etapa_3(self):
+        junio = [_por_uuid(self.registros, UUID_JUNIO)]
+        ruta = os.path.join(tempfile.mkdtemp(), "uno.xlsx")
+        hojas = {dx.HOJA_DETALLE, dx.HOJA_IVA, dx.HOJA_CUADRE,
+                 dx.HOJA_COMBUSTIBLE}
+        escritas = dx.exportar_desglose(junio, ruta, hojas=hojas)
+        self.assertEqual(escritas, [dx.HOJA_DETALLE, dx.HOJA_COMBUSTIBLE,
+                                    dx.HOJA_IVA, dx.HOJA_CUADRE])
+        ws = openpyxl.load_workbook(ruta)[dx.HOJA_DETALLE]
+        self.assertEqual(ws.max_row, 1 + 34 + 2)
+
+
 class TestExporter(_Base):
     def _exportar(self, **kwargs):
         carpeta = tempfile.mkdtemp()

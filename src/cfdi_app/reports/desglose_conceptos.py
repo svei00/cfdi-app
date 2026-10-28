@@ -26,6 +26,7 @@ Reglas de aplanado (diseño §3.2):
   - Los codigos de TipoCombustible se muestran tal cual; su significado no se
     inventa (el XSD ecc12 aun no esta en docs/, ver diseño §3.1).
 """
+import re
 from collections import OrderedDict
 from datetime import datetime
 
@@ -501,11 +502,17 @@ def _rfc_receptor_dominante(lineas):
     return max(conteo, key=conteo.get) if conteo else "LOTE"
 
 
-def nombre_archivo(lineas, rfc_emisor=None):
-    """Desglose_<RFC>_<AAAA-MM>[_a_<AAAA-MM>][_<RFC emisor>].xlsx, derivado
-    del lote (mismo criterio que D29/F2.7). El sufijo de proveedor solo se
-    agrega si el usuario filtro por uno (una sola cifra no debe parecer el
-    reporte completo)."""
+def _sanear(texto):
+    """Solo letras, digitos, guion y guion bajo (seguro como nombre de archivo)."""
+    return re.sub(r"[^A-Za-z0-9_-]+", "-", str(texto)).strip("-")
+
+
+def nombre_archivo(lineas, rfc_emisor=None, sufijo=None):
+    """Desglose_<RFC>_<AAAA-MM>[_a_<AAAA-MM>][_<RFC emisor>][_<sufijo>].xlsx,
+    derivado del lote (mismo criterio que D29/F2.7). El sufijo de proveedor
+    solo se agrega si el usuario filtro por uno (una sola cifra no debe parecer
+    el reporte completo); `sufijo` identifica un reporte de UN solo XML (la
+    factura), ya saneado."""
     meses = sorted({l["mes_clave"] for l in lineas if l["mes_clave"] != SIN_FECHA})
     if not meses:
         periodo = "SinFecha"
@@ -516,4 +523,98 @@ def nombre_archivo(lineas, rfc_emisor=None):
     partes = ["Desglose", _rfc_receptor_dominante(lineas), periodo]
     if rfc_emisor:
         partes.append(rfc_emisor)
+    if sufijo and _sanear(sufijo):
+        partes.append(_sanear(sufijo))
     return "_".join(partes) + ".xlsx"
+
+
+# --- Reporte "por XML" (etapa 3, diseño §3.4) ------------------------------
+
+# (clave de la linea, encabezado, numerica). Las 4 ultimas solo tienen dato en
+# lineas ECC (cargas del complemento de combustible).
+COLUMNAS_XML = [
+    ("origen", "Origen", False),
+    ("num_linea", "Línea", True),
+    ("clave_prod_serv", "ClaveProdServ", False),
+    ("descripcion", "Descripción", False),
+    ("cantidad", "Cantidad", True),
+    ("unidad", "Unidad", False),
+    ("valor_unitario", "Valor unitario", True),
+    ("importe", "Importe", True),
+    ("descuento", "Descuento", True),
+    ("iva", "IVA", True),
+    ("total_linea", "Total", True),
+    ("fecha_carga", "Fecha carga", False),
+    ("tarjeta", "Tarjeta", False),
+    ("rfc_estacion", "RFC estación", False),
+    ("tipo_combustible", "Tipo comb.", False),
+]
+_CAMPOS_PRECIO = ("valor_unitario",)
+
+
+def _fmt_celda(clave, valor):
+    if valor is None or valor == "":
+        return ""
+    if clave == "num_linea":
+        return str(int(valor))
+    if isinstance(valor, float):
+        decimales = 3 if clave in _CAMPOS_PRECIO else 2
+        return f"{valor:,.{decimales}f}"
+    return str(valor)
+
+
+def tabla_xml(lineas):
+    """(encabezados, filas, numericas): todo ya como TEXTO listo para pintar
+    (separador de miles, 2 decimales). Las columnas de combustible solo se
+    incluyen si hay cargas ECC, para no mostrar 4 columnas vacias en una
+    factura normal."""
+    cols = [c for c in COLUMNAS_XML
+            if hay_ecc(lineas) or c[0] not in
+            ("fecha_carga", "tarjeta", "rfc_estacion", "tipo_combustible")]
+    encabezados = [c[1] for c in cols]
+    numericas = [c[2] for c in cols]
+    filas = [[_fmt_celda(c[0], l.get(c[0])) for c in cols] for l in lineas]
+    return encabezados, filas, numericas
+
+
+def resumen_xml(lineas):
+    """Totales de UN comprobante para el pie del dialogo. El IVA del CFDI y el
+    del complemento van separados (D54)."""
+    cfdi = [l for l in lineas if l["origen"] == ORIGEN_CFDI]
+    ecc = [l for l in lineas if l["origen"] == ORIGEN_ECC]
+    iva_cfdi = sum(l["iva"] for l in cfdi)
+    iva_ecc = sum(l["iva"] for l in ecc)
+    return {
+        "lineas_cfdi": len(cfdi),
+        "cargas": len(ecc),
+        "litros": round(sum(l["cantidad"] for l in ecc), 2),
+        "importe": round(sum(l["importe"] for l in lineas), 2),
+        "importe_cfdi": round(sum(l["importe"] for l in cfdi), 2),
+        "importe_ecc": round(sum(l["importe"] for l in ecc), 2),
+        "iva_cfdi": round(iva_cfdi, 2),
+        "iva_ecc": round(iva_ecc, 2),
+        "iva_total": round(iva_cfdi + iva_ecc, 2),
+        "total_cfdi": round(sum(l["total_linea"] for l in cfdi), 2),
+        "total_ecc": round(sum(l["total_linea"] for l in ecc), 2),
+        "total": round(sum(l["total_linea"] for l in lineas), 2),
+    }
+
+
+def texto_pie_xml(resumen):
+    """Pie del dialogo en texto plano (una cadena por renglon)."""
+    renglones = [
+        f"Conceptos del CFDI: {resumen['lineas_cfdi']}   |   "
+        f"Importe: ${resumen['importe_cfdi']:,.2f}   |   "
+        f"IVA del CFDI: ${resumen['iva_cfdi']:,.2f}   |   "
+        f"Total del CFDI: ${resumen['total_cfdi']:,.2f}",
+    ]
+    if resumen["cargas"]:
+        renglones.append(
+            f"Cargas del complemento: {resumen['cargas']}   |   "
+            f"Litros: {resumen['litros']:,.2f}   |   "
+            f"Importe: ${resumen['importe_ecc']:,.2f}   |   "
+            f"IVA del complemento: ${resumen['iva_ecc']:,.2f}   |   "
+            f"Total del complemento: ${resumen['total_ecc']:,.2f}")
+        renglones.append(
+            f"IVA total (CFDI + complemento): ${resumen['iva_total']:,.2f}")
+    return renglones

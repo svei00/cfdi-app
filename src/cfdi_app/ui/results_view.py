@@ -145,6 +145,10 @@ ALL_TABS = [INVOICE_TAB, NOMINA_TAB, PAGOS_TAB]
 class _ResultsTabPanel(QWidget):
     """Una pestaña: caja de busqueda + tabla + fila de totales."""
 
+    # F2.10 etapa 3: el usuario pidio el desglose de UN comprobante (clic
+    # derecho en Facturas). Solo lleva el UUID; el panel no sabe de reportes.
+    desglose_requested = Signal(str)
+
     def __init__(self, config: TabConfig, parent=None):
         super().__init__(parent)
         self.config = config
@@ -202,8 +206,24 @@ class _ResultsTabPanel(QWidget):
         self.proxy.setSourceModel(self.model)
         self._update_totals_label()
 
+    def _record_at_pos(self, pos):
+        """Registro de la fila bajo el cursor (no necesariamente la
+        seleccionada), o None si el clic cayo fuera de las filas."""
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return None
+        return self.model.record_at(self.proxy.mapToSource(index).row())
+
     def _show_context_menu(self, pos):
         menu = QMenu(self.table)
+        if self.config.key == INVOICE_TAB.key:
+            record = self._record_at_pos(pos)
+            uuid = str((record or {}).get("UUID") or "").strip()
+            if uuid:
+                desglose_action = menu.addAction("Ver desglose de este XML")
+                desglose_action.triggered.connect(
+                    lambda _checked=False, u=uuid: self.desglose_requested.emit(u))
+                menu.addSeparator()
         copy_action = menu.addAction("Copiar")
         copy_action.triggered.connect(self._copy_selection)
         menu.exec(self.table.viewport().mapToGlobal(pos))
@@ -254,6 +274,9 @@ class ResultsView(QTabWidget):
     # filtros de texto).
     filter_changed = Signal()
 
+    # F2.10 etapa 3: reenvia el UUID elegido en el menu contextual de Facturas.
+    desglose_requested = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(_DARK_TABLE_STYLESHEET)
@@ -265,6 +288,7 @@ class ResultsView(QTabWidget):
             # textChanged manda el texto nuevo (str); filter_changed no toma
             # argumentos - una lambda descarta el str en vez de reenviarlo.
             panel.search_box.textChanged.connect(lambda _text: self.filter_changed.emit())
+            panel.desglose_requested.connect(self.desglose_requested)
 
     def set_result(self, result):
         """Puebla las 3 pestañas a partir de un core.ProcessResult (o None para vaciar)."""
