@@ -14,7 +14,7 @@ los dicts YA parseados, en la capa CSV unicamente. El Excel/visor no cambian.
 """
 from datetime import datetime
 
-from cfdi_app.constants import TIPO_COMPROBANTE_MAP
+from cfdi_app.constants import TIPO_COMPROBANTE_MAP, normalize_tasa
 
 # --- Reverso de TIPO_COMPROBANTE_MAP (D47): el parser solo guarda la
 # etiqueta ("Factura"), nunca el codigo crudo (I/E/P/N/T) - se reconstruye
@@ -146,7 +146,8 @@ def compute_iva_bases(conceptos_detalle):
             if traslado.get("TipoFactor") == "Exento":
                 bases["IVA Exenta Base"] += base
                 continue
-            columna = _TASA_A_COLUMNA_BASE.get(traslado.get("TasaOCuota"))
+            columna = _TASA_A_COLUMNA_BASE.get(
+                normalize_tasa(traslado.get("TasaOCuota")))
             if columna:
                 bases[columna] += base
     return bases

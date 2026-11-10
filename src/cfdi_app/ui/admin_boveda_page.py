@@ -110,6 +110,13 @@ class AdminBovedaPage(QWidget):
             "Ver todos los conceptos del lote, filtrables, con el RFC y la "
             "factura que los contiene (disponible después de Procesar)")
         self.desglose_lote_btn.setEnabled(False)
+        # F7-lite: consulta el estatus (vigente/cancelado) de cada CFDI del
+        # lote al SAT. Siempre por clic del usuario, nunca automatico.
+        self.verify_sat_btn = QPushButton("Verificar estatus SAT")
+        self.verify_sat_btn.setToolTip(
+            "Consulta al SAT si cada CFDI del lote está vigente o cancelado "
+            "y llena la columna «Estado SAT» (disponible después de Procesar)")
+        self.verify_sat_btn.setEnabled(False)
         self.open_btn = QPushButton("Abrir archivo")
         self.open_btn.setEnabled(False)
         self.open_folder_btn = QPushButton("Abrir carpeta")
@@ -118,6 +125,7 @@ class AdminBovedaPage(QWidget):
         action_row.addWidget(self.save_btn)
         action_row.addWidget(self.save_filtered_btn)
         action_row.addWidget(self.desglose_lote_btn)
+        action_row.addWidget(self.verify_sat_btn)
         action_row.addWidget(self.open_btn)
         action_row.addWidget(self.open_folder_btn)
         layout.addLayout(action_row)

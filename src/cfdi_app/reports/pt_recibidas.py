@@ -185,6 +185,24 @@ def _a_mxn(importe, tipo_cambio):
     return _num(importe) * _num(tipo_cambio, 1.0)
 
 
+def factor_a_mxn_pago(pago):
+    """Factor para pasar a MXN un importe de un DoctoRelacionado de REP
+    (Pagos 2.0). ImpPagado e IVA vienen en la MONEDA DEL DOCUMENTO (MonedaDR);
+    EquivalenciaDR = unidades de MonedaDR por 1 unidad de MonedaP, y
+    TipoCambioP = MXN por 1 unidad de MonedaP. Entonces
+        MXN = importe / EquivalenciaDR * TipoCambioP.
+    Pagos 2.0 NO tiene TipoCambioDR (el codigo anterior lo leia y por eso un
+    documento en USD se tomaba como pesos: octubre 2026, 41 mil MXN de
+    menos). Si falta EquivalenciaDR/TipoCambioP se asume 1 (documento y pago
+    en la misma moneda). Compatibilidad: se acepta un TipoCambioDR legado."""
+    equivalencia = _num(pago.get("EquivalenciaDR"), 0.0)
+    if equivalencia > 0:
+        tipo_cambio_p = _num(pago.get("TipoCambioP"), 1.0) or 1.0
+        return tipo_cambio_p / equivalencia
+    legado = _num(pago.get("TipoCambioDR"), 0.0)
+    return legado if legado > 0 else 1.0
+
+
 def es_bancarizada(forma_codigo):
     """R6: True si la forma de pago es bancarizada por catalogo."""
     return forma_codigo in FORMAS_BANCARIZADAS
@@ -293,7 +311,7 @@ def indexar_pagos_por_uuid(pagos_data):
         uuid_factura = str(pago.get("IdDocumento Relacionado", "")).strip().upper()
         if not uuid_factura:
             continue
-        tc = pago.get("TipoCambioDR", pago.get("TipoCambioP", 1.0))
+        tc = factor_a_mxn_pago(pago)
         registro = {
             "mes": _mes_de(pago.get("FechaPago")),
             "imp_pagado_mxn": _a_mxn(pago.get("ImpPagado"), tc),

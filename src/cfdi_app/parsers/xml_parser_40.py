@@ -8,7 +8,7 @@ from cfdi_app.constants import (
     NAMESPACES_CFDI_40, TIPO_COMPROBANTE_MAP, FORMA_PAGO_MAP, METODO_PAGO_MAP,
     USO_CFDI_MAP, REGIMEN_FISCAL_RECEPTOR_MAP, INVOICE_COLUMN_ORDER,
     CFDI_COMMON_CHILD_ELEMENTS_TO_EXTRACT, NOMINA_FIELDS_TO_EXTRACT,
-    is_combustible_concepto
+    is_combustible_concepto, normalize_tasa
 )
 
 # Define the full URI for the CFDI namespace for direct attribute access
@@ -93,7 +93,7 @@ def _extract_tax_details(root, data, namespaces):
     for concepto_traslado in root.findall(".//cfdi:Concepto/cfdi:Impuestos/cfdi:Traslados/cfdi:Traslado", namespaces):
         impuesto_code = concepto_traslado.get("Impuesto", "").strip()
         tipo_factor = concepto_traslado.get("TipoFactor", "").strip()
-        tasa_ocuota = concepto_traslado.get("TasaOCuota", "").strip()
+        tasa_ocuota = normalize_tasa(concepto_traslado.get("TasaOCuota"))
         importe_str = concepto_traslado.get("Importe", "0.00").strip()
 
         try:
@@ -143,7 +143,7 @@ def _extract_tax_details(root, data, namespaces):
             data["Retenido ISR"] += importe
         elif impuesto_code == "002":  # IVA
             data["Retenido IVA"] += importe
-            tasa_ocuota_ret = concepto_retencion.get("TasaOCuota", "").strip()
+            tasa_ocuota_ret = normalize_tasa(concepto_retencion.get("TasaOCuota"))
             if tasa_ocuota_ret == "0.060000":  # Specific IVA Retenido rate
                 data["IVA Ret 6%"] += importe
 

@@ -79,8 +79,12 @@ def parse_xml_file_by_version(xml_file_path):
         return None, f"Error inesperado: {e}"
 
 
-def process_zip_file(zip_path, on_log=None):
+def process_zip_file(zip_path, on_log=None, stats=None):
     """Extrae los XMLs de un .zip a una carpeta temporal y los procesa.
+
+    `stats` (dict opcional): si se pasa, se llena stats["xml_files"] con el
+    numero de XML del zip que se parsearon bien (los Pagos aportan varias
+    filas por archivo, asi que contar filas inflaria el total).
 
     Devuelve (extracted_data, errors) donde errors es una lista de tuplas
     (etiqueta, razon). Un .zip corrupto ya NO propaga la excepcion sin
@@ -117,6 +121,8 @@ def process_zip_file(zip_path, on_log=None):
                     if error:
                         errors.append((label, error))
                     elif data:
+                        if stats is not None:
+                            stats["xml_files"] = stats.get("xml_files", 0) + 1
                         if isinstance(data, list):
                             extracted_data.extend(data)
                         else:
@@ -183,18 +189,22 @@ def _process_target_files(targets, result, on_log=None, on_progress=None):
                 result.errors.append((path, error))
                 log(f"   ERROR: {error}")
             elif parsed_data:
+                # processed_count cuenta ARCHIVOS, no filas: un REP con 30
+                # documentos relacionados es 1 procesado (antes decia 176
+                # procesados para 138 XML).
                 if isinstance(parsed_data, list):
                     result.all_parsed_data.extend(parsed_data)
-                    result.processed_count += len(parsed_data)
                 else:
                     result.all_parsed_data.append(parsed_data)
-                    result.processed_count += 1
+                result.processed_count += 1
         elif lower.endswith(".zip"):
             log(f" - Descomprimiendo y procesando {file}...")
-            zip_results, zip_errors = process_zip_file(path, on_log=on_log)
+            zip_stats = {}
+            zip_results, zip_errors = process_zip_file(
+                path, on_log=on_log, stats=zip_stats)
             if zip_results:
                 result.all_parsed_data.extend(zip_results)
-                result.processed_count += len(zip_results)
+                result.processed_count += zip_stats.get("xml_files", 0)
             if zip_errors:
                 result.error_count += len(zip_errors)
                 result.errors.extend(zip_errors)

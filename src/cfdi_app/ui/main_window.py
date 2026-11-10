@@ -45,6 +45,7 @@ from cfdi_app.ui.inicio_page import InicioPage
 from cfdi_app.ui.reportes_page import ReportesPage
 from cfdi_app.ui.state import AppState, widget_states_for
 from cfdi_app.ui.vault_move_worker import VaultMoveWorker
+from cfdi_app.ui.status_worker import StatusWorker
 from cfdi_app.ui.worker import ProcessWorker
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,11 @@ class MainWindow(QMainWindow):
 
         self._move_thread = None
         self._move_worker = None
+
+        # F7-lite: verificacion de estatus SAT en su propio hilo.
+        self._status_thread = None
+        self._status_worker = None
+        self._status_busy = False
 
         core.create_initial_directories()
 
@@ -130,6 +136,7 @@ class MainWindow(QMainWindow):
         self.save_btn = self.admin_page.save_btn
         self.save_filtered_btn = self.admin_page.save_filtered_btn
         self.desglose_lote_btn = self.admin_page.desglose_lote_btn
+        self.verify_sat_btn = self.admin_page.verify_sat_btn
         self.open_btn = self.admin_page.open_btn
         self.open_folder_btn = self.admin_page.open_folder_btn
         self.progress_bar = self.admin_page.progress_bar
@@ -145,6 +152,7 @@ class MainWindow(QMainWindow):
         self.save_btn.clicked.connect(self.on_save_clicked)
         self.save_filtered_btn.clicked.connect(self.on_save_filtered_clicked)
         self.desglose_lote_btn.clicked.connect(self.on_desglose_lote_clicked)
+        self.verify_sat_btn.clicked.connect(self.on_verify_sat_clicked)
         self.open_btn.clicked.connect(self.on_open_clicked)
         self.open_folder_btn.clicked.connect(self.on_open_folder_clicked)
         # F2.7: el filtro de texto no es parte de AppState (§16.3) - se
@@ -445,13 +453,14 @@ class MainWindow(QMainWindow):
         ws = widget_states_for(state, has_folder)
         # Una mudanza de boveda en curso deshabilita todo lo que toca la
         # boveda o dispara procesamiento, igual que PROCESSING (D39).
-        moving = self._vault_move_busy
+        moving = self._vault_move_busy or self._status_busy
 
         self.select_action.setEnabled(ws.select_enabled and not moving)
         self.open_loose_xml_btn.setEnabled(ws.select_enabled and not moving)
         self.process_btn.setEnabled(ws.process_enabled and not moving)
         self.save_btn.setEnabled(ws.save_enabled and not moving)
         self.desglose_lote_btn.setEnabled(ws.save_enabled and not moving)
+        self.verify_sat_btn.setEnabled(ws.save_enabled and not moving)
         # F2.9 (D43/§18.3): mismo criterio que "Guardar Excel..." - hay
         # resultado (DONE) que exportar.
         self.export_csv_action.setEnabled(ws.save_enabled and not moving)
@@ -634,6 +643,72 @@ class MainWindow(QMainWindow):
         self.append_log(summary)
         self._log_errors(result.errors)
         self.results_view.set_result(result)
+
+    # --- F7-lite: estatus SAT ----------------------------------------------
+    def on_verify_sat_clicked(self):
+        """Clic del usuario: consulta el estatus SAT de todo el lote cargado.
+        Corre en su propio hilo; los slots solo mutan estado (REGLA DE ORO)."""
+        result = self._last_result
+        if result is None or not result.has_data or self._status_busy:
+            return
+        records = (list(result.invoice_data) + list(result.nomina_data)
+                   + list(result.pagos_data))
+        self._status_busy = True
+        self._apply_state(self._state)
+        self.append_log("\nVerificando estatus ante el SAT…")
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setFormat("Consultando al SAT…")
+
+        self._status_thread = QThread(self)
+        self._status_worker = StatusWorker(records)
+        self._status_worker.moveToThread(self._status_thread)
+        self._status_thread.started.connect(self._status_worker.run)
+        self._status_worker.progress.connect(self.on_status_progress)
+        self._status_worker.finished.connect(self.on_status_result)
+        self._status_worker.finished.connect(self._status_thread.quit)
+        self._status_worker.finished.connect(self._status_worker.deleteLater)
+        self._status_worker.failed.connect(self.on_status_error)
+        self._status_worker.failed.connect(self._status_thread.quit)
+        self._status_worker.failed.connect(self._status_worker.deleteLater)
+        self._status_thread.finished.connect(self._status_thread.deleteLater)
+        self._status_thread.finished.connect(self._on_status_thread_finished)
+        self._status_thread.start()
+
+    @Slot(int, int)
+    def on_status_progress(self, done, total):
+        if total > 0:
+            self.progress_bar.setRange(0, total)
+            self.progress_bar.setValue(done)
+            self.progress_bar.setFormat("SAT: %v / %m")
+
+    @Slot(object)
+    def on_status_result(self, resumen):
+        self.append_log(
+            f"Estatus SAT — Vigentes: {resumen['vigente']}  |  "
+            f"Cancelados: {resumen['cancelado']}  |  "
+            f"No encontrados: {resumen['no_encontrado']}  |  "
+            f"Sin respuesta: {resumen['error']}  "
+            f"(consultados {resumen['consultados']}, del caché {resumen['de_cache']})")
+        for uuid, estado in resumen["problemas"]:
+            self.append_log(f"   {estado}: {uuid}")
+        if resumen["error"]:
+            self.append_log("   Los «sin respuesta» no se guardaron: vuelve a "
+                            "pulsar el botón para reintentarlos.")
+        self.append_log("El estatus es el de HOY (no el del mes de la factura).")
+        # Refrescar el visor para mostrar la columna Estado SAT.
+        self.results_view.set_result(self._last_result)
+
+    @Slot(str)
+    def on_status_error(self, message):
+        self.append_log(f"\nERROR al verificar el estatus SAT: {message}")
+        logger.error("StatusWorker fallo: %s", message)
+
+    @Slot()
+    def _on_status_thread_finished(self):
+        self._status_thread = None
+        self._status_worker = None
+        self._status_busy = False
+        self._apply_state(self._state)
 
     @Slot(str)
     def on_error(self, message):

@@ -95,17 +95,34 @@ def filter_records(records, query, text_fields, amount_fields, default_amount_fi
     ]
 
 
-def compute_totals(records, amount_fields):
+def compute_totals(records, amount_fields, once_per=None):
     """
     Suma los campos de `amount_fields` (dict alias->clave_real, o lista de
     claves reales) sobre `records`. Valores no numericos/ausentes cuentan
     como 0.0. Devuelve un dict {clave_real: suma}.
+
+    `once_per` (opcional): {clave_real: clave_de_grupo}. Para esas columnas el
+    valor se suma UNA sola vez por cada valor distinto de la clave de grupo.
+    Sirve para importes que el parser repite en cada fila hija (p. ej. el
+    MontoTotalPagos de un REP, repetido en cada DoctoRelacionado): sin esto un
+    REP de 30 documentos se contaba 30 veces (octubre 2026: 86.6 M en vez de
+    4.29 M). Las filas sin clave de grupo se suman normal.
     """
     keys = list(amount_fields.values()) if isinstance(amount_fields, dict) else list(amount_fields)
+    once_per = once_per or {}
     totals = {key: 0.0 for key in keys}
+    vistos = {key: set() for key in keys if key in once_per}
     for record in records:
         for key in keys:
             value = _as_float(record.get(key))
-            if value is not None:
-                totals[key] += value
+            if value is None:
+                continue
+            group_key = once_per.get(key)
+            if group_key:
+                grupo = record.get(group_key)
+                if grupo not in (None, ""):
+                    if grupo in vistos[key]:
+                        continue
+                    vistos[key].add(grupo)
+            totals[key] += value
     return totals

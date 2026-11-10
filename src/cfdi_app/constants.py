@@ -2,6 +2,22 @@
 # This file defines global constants, such as XML namespaces, mapping dictionaries,
 # and column orderings used across different modules of the CFDI processor.
 import re
+from decimal import Decimal, InvalidOperation
+
+
+def normalize_tasa(value):
+    """Normaliza un TasaOCuota/TasaOCuotaDR a la forma canonica de 6 decimales
+    ("0.16", ".16" y "0.160000" -> "0.160000"). Los parsers comparaban la
+    cadena exacta y un XML con "0.16" quedaba fuera de la columna de IVA
+    (caso real: octubre 2026). Valor vacio o no numerico -> "" (no coincide
+    con ninguna tasa conocida, igual que antes)."""
+    texto = str(value if value is not None else "").strip()
+    if not texto:
+        return ""
+    try:
+        return f"{Decimal(texto):.6f}"
+    except (InvalidOperation, ValueError):
+        return ""
 
 # --- XML NAMESPACES ---
 # Define XML namespaces for different CFDI versions and complements

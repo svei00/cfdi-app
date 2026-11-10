@@ -6,7 +6,7 @@
 # despues de un shell/dashboard sin reescribirlo, y que F4 conecte un modelo
 # respaldado en SQLite a la MISMA vista para el modo historial.
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -63,6 +63,9 @@ class TabConfig:
     amount_fields: dict    # alias en minusculas -> clave real, para "campo<numero"
     default_amount_field: str  # clave real usada cuando no se nombra campo
     total_columns: list    # claves reales a sumar en la fila de totales
+    # {clave_real: clave_de_grupo}: columnas que el parser repite en cada fila
+    # hija y que la fila de totales debe contar una vez por grupo.
+    totals_once_per: dict = field(default_factory=dict)
 
 
 INVOICE_TAB = TabConfig(
@@ -76,8 +79,8 @@ INVOICE_TAB = TabConfig(
     # IEDU (CURP/Nivel Educativo Dependiente - solo escuelas privadas),
     # tasas de IEPS individuales (3%/6%/7%/8%/9%/26.5%/30%/30.4%/53%/160% -
     # "Total IEPS" ya las resume), direcciones completas (ocupan mucho ancho),
-    # y "Estado SAT"/"Verificado o Asoc." (siempre vacios hoy: la validacion
-    # SAT es F7, aun no implementada - una columna siempre en blanco es ruido).
+    # y "Verificado o Asoc." (siempre vacio hoy). "Estado SAT" SI va: se llena
+    # con el boton «Verificar estatus SAT» (F7-lite); sin verificar queda en blanco.
     # Todo esto sigue disponible en el Excel completo; el visor es un vistazo
     # rapido, no un reemplazo del Excel. Selector de columnas configurable
     # por el usuario: F3 (D18).
@@ -85,7 +88,8 @@ INVOICE_TAB = TabConfig(
                      "RFC Receptor", "Nombre Receptor", "UsoCFDI", "LugarDeExpedicion",
                      "SubTotal", "Descuento", "IVA 16%", "Retenido IVA", "Retenido ISR",
                      "Total IEPS", "Total", "Moneda", "Tipo De Cambio", "FormaDePago",
-                     "Metodo de Pago", "Conceptos", "UUID", "UUID Relacion"],
+                     "Metodo de Pago", "Estado SAT", "Conceptos", "UUID",
+                     "UUID Relacion"],
     # Ampliado 2026-07-05 (a peticion del dueno, sin necesidad de Fable/Opus -
     # ambos campos YA eran columnas visibles arriba, solo faltaba poder
     # buscarlos): UsoCFDI (p.ej. deducibilidad D10 colegiaturas) y Metodo de
@@ -137,6 +141,8 @@ PAGOS_TAB = TabConfig(
     amount_fields={"total": "MontoTotalPagos", "monto": "Monto Pago"},
     default_amount_field="MontoTotalPagos",
     total_columns=["MontoTotalPagos", "ImpPagado"],
+    # MontoTotalPagos es del REP completo y se repite en cada DoctoRelacionado.
+    totals_once_per={"MontoTotalPagos": "UUID CFDI", "Monto Pago": "PagoKey"},
 )
 
 ALL_TABS = [INVOICE_TAB, NOMINA_TAB, PAGOS_TAB]
@@ -259,7 +265,9 @@ class _ResultsTabPanel(QWidget):
         visible = filtering.filter_records(
             self._records, query, self.config.text_fields,
             self.config.amount_fields, self.config.default_amount_field)
-        totals = filtering.compute_totals(visible, {c: c for c in self.config.total_columns})
+        totals = filtering.compute_totals(
+            visible, {c: c for c in self.config.total_columns},
+            once_per=self.config.totals_once_per)
         parts = [f"{col}: ${totals[col]:,.2f}" for col in self.config.total_columns]
         count_part = f"{len(visible)} de {len(self._records)} registro(s)"
         self.totals_label.setText(f"{count_part}   —   " + "   ".join(parts))

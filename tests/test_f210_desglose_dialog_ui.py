@@ -15,7 +15,7 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 try:
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QDialogButtonBox
 except ImportError as exc:  # pragma: no cover - depende del entorno
     raise unittest.SkipTest(f"PySide6 no disponible: {exc}")
 
@@ -80,7 +80,8 @@ class TestFiltroDeProveedorEnElDialogo(unittest.TestCase):
 
     def test_enter_en_la_caja_no_cierra_ni_guarda(self):
         self.assertFalse(
-            self.dialog.buttons.button(self.dialog.buttons.Save).autoDefault())
+            self.dialog.buttons.button(
+                QDialogButtonBox.StandardButton.Save).autoDefault())
 
 
 if __name__ == "__main__":

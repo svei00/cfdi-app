@@ -7,7 +7,8 @@ from datetime import datetime
 from cfdi_app.constants import (
     NAMESPACES_CFDI_40, FORMA_PAGO_MAP, TIPO_COMPROBANTE_MAP, USO_CFDI_MAP,
     REGIMEN_FISCAL_RECEPTOR_MAP, PAGOS_COLUMN_ORDER, PAGO_FIELDS_TO_EXTRACT,
-    PAGO_DR_FIELDS_TO_EXTRACT, CFDI_COMMON_CHILD_ELEMENTS_TO_EXTRACT, PAGO_DR_TAX_FIELDS
+    PAGO_DR_FIELDS_TO_EXTRACT, CFDI_COMMON_CHILD_ELEMENTS_TO_EXTRACT, PAGO_DR_TAX_FIELDS,
+    normalize_tasa
 )
 
 # Define the full URIs for relevant namespaces for direct attribute access
@@ -52,7 +53,7 @@ def _extract_pagos_tax_details_dr(docto_relacionado_node, data, namespaces):
     for traslado_dr in docto_relacionado_node.findall("./pago20:ImpuestosDR/pago20:TrasladosDR/pago20:TrasladoDR", namespaces):
         impuesto_code = traslado_dr.get("ImpuestoDR", "").strip()
         tipo_factor = traslado_dr.get("TipoFactorDR", "").strip()
-        tasa_ocuota = traslado_dr.get("TasaOCuotaDR", "").strip()
+        tasa_ocuota = normalize_tasa(traslado_dr.get("TasaOCuotaDR"))
         base_str = traslado_dr.get("BaseDR", "0.00").strip()
         importe_str = traslado_dr.get("ImporteDR", "0.00").strip()
 
@@ -119,7 +120,7 @@ def _extract_pagos_tax_details_dr(docto_relacionado_node, data, namespaces):
     # Process RetencionesDR
     for retencion_dr in docto_relacionado_node.findall("./pago20:ImpuestosDR/pago20:RetencionesDR/pago20:RetencionDR", namespaces):
         impuesto_code = retencion_dr.get("ImpuestoDR", "").strip()
-        tasa_ocuota = retencion_dr.get("TasaOCuotaDR", "").strip()
+        tasa_ocuota = normalize_tasa(retencion_dr.get("TasaOCuotaDR"))
         base_str = retencion_dr.get("BaseDR", "0.00").strip()
         importe_str = retencion_dr.get("ImporteDR", "0.00").strip()
 
@@ -301,7 +302,8 @@ def parse_cfdi_pago_20(xml_file_path):
                         base_cfdi_data[col_name] = 0.0
 
         # Iterate through each pago20:Pago element
-        for pago_node in pagos_complement.findall("./pago20:Pago", NAMESPACES_CFDI_40):
+        for pago_idx, pago_node in enumerate(
+                pagos_complement.findall("./pago20:Pago", NAMESPACES_CFDI_40), start=1):
             # Extract data from the current pago20:Pago element
             current_pago_data = {}
             for _, attr_name, default_val, col_name in pago_fields:
@@ -335,6 +337,11 @@ def parse_cfdi_pago_20(xml_file_path):
             # Iterate through each pago20:DoctoRelacionado element within the current pago20:Pago
             for docto_relacionado_node in pago_node.findall("./pago20:DoctoRelacionado", NAMESPACES_CFDI_40):
                 row_data = base_cfdi_data.copy()  # Start with base CFDI data
+                # Clave INTERNA del nodo Pago (no es columna del Excel): el
+                # visor la usa para contar "Monto Pago" una sola vez por pago
+                # aunque se repita en cada DoctoRelacionado.
+                row_data["PagoKey"] = (
+                    f"{base_cfdi_data.get('UUID CFDI') or ''}#{pago_idx}")
 
                 # Add current pago20:Pago data (solo las claves que SI se
                 # encontraron en este nodo - ver nota arriba).
